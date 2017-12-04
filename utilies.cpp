@@ -1,9 +1,12 @@
-#include "ulities.h"
-void limitSize(std::vector<raftpb.Entry>& entries, uint64_t maxSize)
+#include <algorithm>
+#include "utilies.h"
+namespace raft
+{
+void limitSize(std::vector<raftpb::Entry>& entries, uint64_t maxSize)
 {
 	if(entries.empty())
 	{
-		return entries;
+		return;
 	}
 	uint64_t size = 0;
 	uint64_t index = 0;
@@ -19,5 +22,6 @@ void limitSize(std::vector<raftpb.Entry>& entries, uint64_t maxSize)
 	{
 		return;
 	}
-	std::erase(entries.begin() + index, entries.end());
+	entries.erase(entries.begin() + index, entries.end());
+}
 }

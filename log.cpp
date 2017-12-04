@@ -1,5 +1,8 @@
 #include "log.h"
 #include <algorithm>
+#include "utilies.h"
+namespace raft
+{
 RaftLog::RaftLog(Storage* storage, Logger* logger)
 {
 	m_storage = storage;
@@ -15,23 +18,23 @@ RaftLog* RaftLog::NewLog(Storage* storage, Logger* logger)
 	{
 		return nullptr;
 	}
-	RaftLog* log = RaftLog(storage, logger);
+	RaftLog* log = new RaftLog(storage, logger);
 	uint64_t first_index;
-	int32_t ret = storage.FirstIndex(first_index);
+	int32_t ret = storage->FirstIndex(first_index);
 	if(ret != 0)
 	{
 		return nullptr;
 	}
         uint64_t last_index;
-        ret = storage.LastIndex(last_index);
+        ret = storage->LastIndex(last_index);
         if(ret != 0)
         {
                 return nullptr;
         }
-	log.m_unstable->setOffset(last_index + 1);
-	log.m_unstable->setLogger(logger);
-	m_commited = first_index - 1;
-	m_applied = first_index - 1;
+	log->m_unstable->setOffset(last_index + 1);
+	log->m_unstable->setLogger(logger);
+	log->m_commited = first_index - 1;
+	log->m_applied = first_index - 1;
 	return log;
 }
 
@@ -65,27 +68,29 @@ int32_t RaftLog::lastIndex(uint64_t& index)
         return 1;
 }
 
-void RaftLog::unstableEntries(std::vector<raftpb.Entry>& entries)
+void RaftLog::unstableEntries(std::vector<raftpb::Entry>& entries)
 {
-	entries = m_unstable->Entries(entries);
+	m_unstable->Entries(entries);
 }
 
-int32_t RaftLog::maybeAppend(uint64_t index, uint64_t term, uint64_t commited, const std::vector<raftpb.Entry>& entries, uint64_t& lastnewi)
-{
-	if(match(index, term))
+int32_t RaftLog::maybeAppend(uint64_t index, uint64_t term, uint64_t commited, const std::vector<raftpb::Entry>& entries, uint64_t& lastnewi)
+{//todo
+	if(matchTerm(index, term))
 	{
 		lastnewi = index + entries.size();
-		uint64_t ci = findConflict(entries)
+		uint64_t ci = findConflict(entries);
+
 	}
+	return 0;
 }
 
-int32_t RaftLog::append(const std::vector<raftpb.Entry>& entries, uint64_t& index)
+int32_t RaftLog::append(const std::vector<raftpb::Entry>& entries, uint64_t& index)
 {
 	if(entries.empty())
 	{
 		return lastIndex(index);
 	}
-	uint4_t after = entries[0].index - 1;
+	uint64_t after = entries[0].index() - 1;
 	if(after < m_commited)
 	{
 		return 1;
@@ -94,7 +99,7 @@ int32_t RaftLog::append(const std::vector<raftpb.Entry>& entries, uint64_t& inde
 	return lastIndex(index);
 }	
 
-uint64_t RaftLog::findConflict(const std::vector<raftpb.Entry>& entries)
+uint64_t RaftLog::findConflict(const std::vector<raftpb::Entry>& entries)
 {
 	for(auto& entry: entries)
 	{
@@ -114,7 +119,7 @@ int32_t RaftLog::Term(uint64_t index, uint64_t& term)
         {
                 return 1;
         }
-	if(i < dummy_index || i > last_index)
+	if(index < dummy_index || index > last_index)
 	{
 		term = 0;
 		return 0;
@@ -124,7 +129,7 @@ int32_t RaftLog::Term(uint64_t index, uint64_t& term)
 	{
 		return ret;
 	}
-	if(ret == ErrCompacted || ret == Errunavailable)
+	if(ret == ErrCompacted || ret == ErrUnavailable)
 	{
 		term = 0;
                 return 0;
@@ -133,18 +138,26 @@ int32_t RaftLog::Term(uint64_t index, uint64_t& term)
 	return ret;
 }
 
-int32_t RaftLog::entries(uint64_t index, uint64_t maxsize, std::vector<raftpb.Entry>& entries)
+int32_t RaftLog::Entries(uint64_t index, uint64_t maxsize, std::vector<raftpb::Entry>& entries)
 {
-	if(index > lastIndex())
+	uint64_t last_index;
+	int32_t ret = lastIndex(last_index);
+	if(index > last_index)
 	{
 		return 0;
 	}
-	return slice(index, lastIndex() + 1, maxsize, entries);
+	return slice(index, last_index + 1, maxsize, entries);
 }
 
-int32_t RaftLog::allEntries(std::vector<raftpb.Entry>& entries)
+int32_t RaftLog::allEntries(std::vector<raftpb::Entry>& entries)
 {
-	int32_t ret = entries(firstIndex(), UINT64_MAX, entries);
+	uint64_t first_index;
+	int32_t ret = firstIndex(first_index);
+	if(ret != 0)
+	{
+	    return ret;
+	}
+	ret = Entries(first_index, UINT64_MAX, entries);
 	if(ret == 0)
 	{
 		return 0;
@@ -152,15 +165,15 @@ int32_t RaftLog::allEntries(std::vector<raftpb.Entry>& entries)
 	return 1;
 }
 
-int32_t mustCheckOutOfBounds(uint64_t lo, uint64_t hi)
+int32_t RaftLog::mustCheckOutOfBounds(uint64_t lo, uint64_t hi)
 {
 	if(lo > hi)
 	{
 		m_logger->Trace("invalid slice");
 		return 1;
 	}
-	uint64_t frist_index
-	int32_t ret = firstIndex(frist_index);
+	uint64_t first_index;
+	int32_t ret = firstIndex(first_index);
 	if(ret != 0)
 	{
 		return 1;
@@ -171,7 +184,7 @@ int32_t mustCheckOutOfBounds(uint64_t lo, uint64_t hi)
         {
                 return 1;
         }
-	if(lo < frist_index)
+	if(lo < first_index)
 	{
 		return ErrCompacted;
 	}
@@ -186,7 +199,7 @@ int32_t mustCheckOutOfBounds(uint64_t lo, uint64_t hi)
 }
 
 
-int32_t RaftLog::slice(uint64_t lo, uint64_t hi, uint64_t maxSize, std::vector<raftpb.Entry>& entries)
+int32_t RaftLog::slice(uint64_t lo, uint64_t hi, uint64_t maxSize, std::vector<raftpb::Entry>& entries)
 {
 	int32_t ret = mustCheckOutOfBounds(lo, hi);
 	if(ret != 0)
@@ -199,7 +212,7 @@ int32_t RaftLog::slice(uint64_t lo, uint64_t hi, uint64_t maxSize, std::vector<r
 	}
 	if(lo < m_unstable->getOffset())
 	{
-		ret = m_storage->Entries(lo, std::Min(hi, m_unstable->getOffset()), maxSize, entries);
+		ret = m_storage->Entries(lo, std::min(hi, m_unstable->getOffset()), maxSize, entries);
 		if(ret == ErrCompacted)
 		{
 			return 0;
@@ -215,8 +228,8 @@ int32_t RaftLog::slice(uint64_t lo, uint64_t hi, uint64_t maxSize, std::vector<r
 	}
 	if(hi > m_unstable->getOffset())
 	{
-		std::vector<raftpb.Entry> unstable_ents;
-		m_unstable->slice(std::Max(lo, m_unstable->getOffset()), hi, unstable_ents);
+		std::vector<raftpb::Entry> unstable_ents;
+		m_unstable->slice(std::max(lo, m_unstable->getOffset()), hi, unstable_ents);
 		if(!unstable_ents.empty())
 		{
 			entries.reserve(entries.size() + unstable_ents.size());
@@ -227,7 +240,7 @@ int32_t RaftLog::slice(uint64_t lo, uint64_t hi, uint64_t maxSize, std::vector<r
 	return 0;
 }
 
-int32_t RaftLog::nextEnts(std::vector<raftpb.Entry>& entries)
+int32_t RaftLog::nextEnts(std::vector<raftpb::Entry>& entries)
 {
 	uint64_t first_index;
 	int32_t ret = firstIndex(first_index);
@@ -261,7 +274,7 @@ bool RaftLog::hasNextEnts()
 	return m_commited + 1 > off;
 }
 
-int32_t RaftLog::snapshot(raftpb.Snapshot& ss)
+int32_t RaftLog::snapshot(raftpb::Snapshot& ss)
 {
 	if(m_unstable->getSnapshot() != nullptr)
 	{
@@ -320,7 +333,7 @@ void RaftLog::stableSnapTo(uint64_t index)
 int32_t RaftLog::lastTerm(uint64_t& term)
 {
         uint64_t last_index;
-        ret = lastIndex(last_index);
+        int32_t ret = lastIndex(last_index);
         if(ret != 0)
         {
                 return 1;
@@ -331,7 +344,7 @@ int32_t RaftLog::lastTerm(uint64_t& term)
 bool RaftLog::isUpToDate(uint64_t index, uint64_t term)
 {
 	uint64_t last_index;
-        ret = lastIndex(last_index);
+        int32_t ret = lastIndex(last_index);
         if(ret != 0)
         {
                 return false;
@@ -364,7 +377,7 @@ bool RaftLog::maybeCommit(uint64_t index, uint64_t term)
 		{
 			return false;
 		}
-		if(0 != commitTo(index)
+		if(0 != commitTo(index))
 		{
 			return false;
 		}
@@ -373,12 +386,12 @@ bool RaftLog::maybeCommit(uint64_t index, uint64_t term)
 	return false;
 }
 
-void RaftLog::restore(raftpb.Snapshot& ss)
+void RaftLog::restore(raftpb::Snapshot& ss)
 {
-	m_commited = ss.metadata().Index();
+	m_commited = ss.mutable_metadata()->index();
 	m_unstable->restore(&ss);
 }
-	
+}
 
 
 

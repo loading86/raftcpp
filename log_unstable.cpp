@@ -1,5 +1,6 @@
 #include "log_unstable.h"
-
+namespace raft
+{
 Unstable::Unstable()
 {
     m_snapshot = nullptr;
@@ -74,14 +75,14 @@ void Unstable::stableSnapTo(uint64_t index)
     }
 }
 
-void Unstable::restore(raftpb.Snapshot* ss)
+void Unstable::restore(raftpb::Snapshot* ss)
 {
     m_offset = ss->metadata().index() + 1;
     m_entries.clear();
     m_snapshot = ss;
 }
 
-void Unstable::truncateAndAppend(const std::vector<raftpb.Entry>& entries)
+void Unstable::truncateAndAppend(const std::vector<raftpb::Entry>& entries)
 {
     uint64_t after = entries[0].index();
     if(after == m_offset + m_entries.size())
@@ -95,7 +96,7 @@ void Unstable::truncateAndAppend(const std::vector<raftpb.Entry>& entries)
     }else
     {
         uint64_t len = entries[entries.size() - 1].index() - m_offset + 1;
-        entries.reserve(len);
+        m_entries.reserve(len);
         uint64_t origin_left_len = len - entries.size();
         std::copy(entries.begin(), entries.end(), m_entries.begin() + origin_left_len);
     }
@@ -117,7 +118,7 @@ int32_t Unstable::mustCheckOutOfBounds(uint64_t lo, uint64_t hi)
     return 0;
 }
 
-int32_t Unstable::slice(uint64_t lo, uint64_t hi, std::vector<raftpb.Entry>& entries);
+int32_t Unstable::slice(uint64_t lo, uint64_t hi, std::vector<raftpb::Entry>& entries)
 {
 	int32_t ret = mustCheckOutOfBounds(lo, hi);
 	if(ret != 0)
@@ -129,6 +130,7 @@ int32_t Unstable::slice(uint64_t lo, uint64_t hi, std::vector<raftpb.Entry>& ent
 	entries.reserve(right - left + 1);
 	std::copy(m_entries.begin(), m_entries.end(), entries.begin());
 	return 0;
+}
 }
 
 
