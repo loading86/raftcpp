@@ -21,3 +21,8 @@ void Logger::Error(const std::string& str)
         m_logger.error(str);
 }
 
+void Logger::Trace(const std::string& str)
+{
+	SPDLOG_TRACE(m_logger, str);
+}
+

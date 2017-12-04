@@ -11,4 +11,5 @@ class Logger
         void Debug(const std::string&);
         void Info(const std::string&);
 	void Error(const std::string&);
+	void Trace(const std::string&)
 };

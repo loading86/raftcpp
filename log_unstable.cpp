@@ -116,3 +116,20 @@ int32_t Unstable::mustCheckOutOfBounds(uint64_t lo, uint64_t hi)
     }
     return 0;
 }
+
+int32_t Unstable::slice(uint64_t lo, uint64_t hi, std::vector<raftpb.Entry>& entries);
+{
+	int32_t ret = mustCheckOutOfBounds(lo, hi);
+	if(ret != 0)
+	{
+		return ret;
+	}	
+	uint64_t left = lo - m_offset;
+	uint64_t right = hi - m_offset;
+	entries.reserve(right - left + 1);
+	std::copy(m_entries.begin(), m_entries.end(), entries.begin());
+	return 0;
+}
+
+
+
