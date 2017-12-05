@@ -65,18 +65,21 @@ void RaftLog::UnstableEntries(std::vector<raftpb::Entry>& entries)
     unstable_->Entries(entries);
 }
 
-int32_t RaftLog::MaybeAppend(uint64_t index, uint64_t term, uint64_t commited,
+int32_t RaftLog::MaybeAppend(uint64_t index,
+    uint64_t term,
+    uint64_t commited,
     const std::vector<raftpb::Entry>& entries,
     uint64_t& lastnewi)
 { // todo
     if (MatchTerm(index, term)) {
         lastnewi = index + entries.size();
         uint64_t ci = FindConflict(entries);
-        if(ci <= commited_){
+        if (ci <= commited_) {
             logger_->Trace("conflict with committed entry");
-        }else if(ci != 0){
+        } else if (ci != 0) {
             uint64_t offset = index + 1;
-            std::vector<raftpb::Entry> append_entries(entries.begin() + ci - offset, entries.end());
+            std::vector<raftpb::Entry> append_entries(entries.begin() + ci - offset,
+                entries.end());
             uint64_t dummy_index;
             Append(append_entries, dummy_index);
             CommitTo(std::min(commited_, lastnewi));
@@ -103,12 +106,12 @@ int32_t RaftLog::Append(const std::vector<raftpb::Entry>& entries,
 uint64_t RaftLog::FindConflict(const std::vector<raftpb::Entry>& entries)
 {
     for (auto& entry : entries) {
-        if (!MatchTerm(entry.index(), entry.term())){
+        if (!MatchTerm(entry.index(), entry.term())) {
             uint64_t last_index;
             LastIndex(last_index);
-            if (entry.index() <= last_index){
+            if (entry.index() <= last_index) {
                 logger_->Trace("found conflict");
-                //todo
+                // todo
             }
             return entry.index();
         }
@@ -142,7 +145,8 @@ int32_t RaftLog::Term(uint64_t index, uint64_t& term)
     return ret;
 }
 
-int32_t RaftLog::Entries(uint64_t index, uint64_t maxsize,
+int32_t RaftLog::Entries(uint64_t index,
+    uint64_t maxsize,
     std::vector<raftpb::Entry>& entries)
 {
     uint64_t last_index;
@@ -194,7 +198,9 @@ int32_t RaftLog::MustCheckOutOfBounds(uint64_t lo, uint64_t hi)
     return 0;
 }
 
-int32_t RaftLog::Slice(uint64_t lo, uint64_t hi, uint64_t max_size,
+int32_t RaftLog::Slice(uint64_t lo,
+    uint64_t hi,
+    uint64_t max_size,
     std::vector<raftpb::Entry>& entries)
 {
     int32_t ret = MustCheckOutOfBounds(lo, hi);
@@ -276,8 +282,9 @@ int32_t RaftLog::CommitTo(uint64_t commited)
             return ret;
         }
         if (last_index < commited) {
-            logger_->Trace("commited is out of range. Was the raft log corrupted, "
-                           "truncated, or lost?");
+            logger_->Trace(
+                "commited is out of range. Was the raft log corrupted, "
+                "truncated, or lost?");
             return 1;
         }
         commited_ = commited;
@@ -304,7 +311,10 @@ void RaftLog::StableTo(uint64_t index, uint64_t term)
     unstable_->StableTo(index, term);
 }
 
-void RaftLog::StableSnapTo(uint64_t index) { unstable_->StableSnapTo(index); }
+void RaftLog::StableSnapTo(uint64_t index)
+{
+    unstable_->StableSnapTo(index);
+}
 
 int32_t RaftLog::LastTerm(uint64_t& term)
 {
