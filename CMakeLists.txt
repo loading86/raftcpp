@@ -10,4 +10,4 @@ SET (LIBRAFT_SRC
 INCLUDE_DIRECTORIES(./raftpb)
 INCLUDE_DIRECTORIES(./include)
 add_compile_options(-std=c++11)
-ADD_LIBRARY (raft_static STATIC ${LIBRAFT_SRC})
+ADD_LIBRARY (raft STATIC ${LIBRAFT_SRC})
