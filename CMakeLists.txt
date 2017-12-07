@@ -1,3 +1,4 @@
+cmake_minimum_required(VERSION 3.5)
 SET (LIBRAFT_SRC
 	raftpb/raft.pb.cc
 	utilies.cpp
@@ -5,6 +6,9 @@ SET (LIBRAFT_SRC
 	log_unstable.cpp
 	storage.cpp
 	log.cpp
+	read_only.cpp
+	progress.cpp
+	raft.cpp
 )
 
 INCLUDE_DIRECTORIES(./raftpb)
