@@ -37,6 +37,7 @@ private:
     Inflights* inflights_;
 
 public:
+    Progress(uint64_t next, Inflights* inflight);
     void ResetState(ProgressStateType state);
     void BecomeProbe();
     void BecomeReplicate();

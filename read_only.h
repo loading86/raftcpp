@@ -1,12 +1,18 @@
 #ifndef __READ__ONLY__H__
 #define __READ__ONLY__H__
-#include "raft.h"
 #include "raft.pb.h"
 #include "read_only.h"
+//#include "raft.h"
 namespace raft {
+
+enum ReadOnlyOption {
+    ReadOnlySafe = 0,
+    ReadOnlyLeaseBased = 1
+};
 struct ReadState {
     uint64_t index_;
     std::string request_ctx_;
+    ReadState(uint64_t index, const std::string& request_ctx):index_(index),request_ctx_(request_ctx){}
 };
 class ReadIndexStatus {
 private:

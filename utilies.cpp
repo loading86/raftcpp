@@ -19,4 +19,14 @@ void LimitSize(std::vector<raftpb::Entry>& entries, uint64_t max_size)
     }
     entries.erase(entries.begin() + index, entries.end());
 }
+
+bool IsHardStateEqual(raftpb::HardState& left, raftpb::HardState& right)
+{
+    return left.term() == right.term() && left.vote() == right.vote() && left.commit() == right.commit();
+}
+
+bool IsHardStateEmpty(raftpb::HardState& state)
+{
+    return state.term() == 0 && state.vote() == 0 && state.commit() == 0;
+}
 }

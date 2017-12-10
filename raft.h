@@ -1,8 +1,14 @@
 #ifndef __RAFT__H__
 #define __RAFT__H__
+#include "log.h"
 #include "logger.h"
+#include "progress.h"
+#include "read_only.h"
 #include "storage.h"
+#include <functional>
 #include <inttypes.h>
+#include <map>
+#include <vector>
 namespace raft {
 enum StateType {
     StateFollower = 0,
@@ -11,10 +17,6 @@ enum StateType {
     StatePreCandidate = 3
 };
 
-enum ReadOnlyOption {
-    ReadOnlySafe = 0,
-    ReadOnlyLeaseBased = 1
-};
 const std::string kCampaignPreElection = "CampaignPreElection";
 const std::string kCampaignElection = "CampaignElection";
 const std::string kCampaignTransfer = "CampaignTransfer";
@@ -36,14 +38,40 @@ struct Config {
 
     bool Validate();
 };
-//
-//	class Raft
-//	{
-//		private:
-//			uint64_t id_;
-//			uint64_t term_;
-//			uint64_t vote_;
-//
-//	};
+
+class Raft {
+private:
+    uint64_t id_;
+    uint64_t term_;
+    uint64_t vote_;
+    std::vector<ReadState> read_states_;
+    RaftLog* raft_log_;
+    int32_t max_inflight_;
+    uint64_t max_msg_size_;
+    std::map<uint64_t, Progress*> peers_;
+    StateType state_;
+    std::map<uint64_t, bool> votes_;
+    std::vector<raftpb::Message> msgs_;
+    uint64_t lead_;
+    uint64_t lead_transferee_;
+    bool pending_conf_;
+    ReadOnly* read_only_;
+    int32_t election_elapsed_;
+    bool check_quorum_;
+    bool pre_vote_;
+    int32_t heart_beat_timeout_;
+    int32_t elction_timeout_;
+    int32_t randomized_elction_timeout_;
+    std::function<void()> tick_;
+    std::function<void(raftpb::Message& msg)> step_;
+    Logger* logger_;
+public:
+    Raft(uint64_t id, uint64_t lead, RaftLog* raft_log, uint64_t max_msg_size, int32_t max_inflight, int32_t heart_beat_timeout, int32_t elction_timeout, Logger* logger, bool check_quorum, bool pre_vote, ReadOnly* read_only);
+    static Raft* NewRaft(Config* config);
+    void LoadState(raftpb::HardState& state);
+    void StepFollower(raftpb::Message& msg);
+    void StepCandidate(raftpb::Message& msg);
+    void StepLeader(raftpb::Message& msg);
+};
 }
 #endif

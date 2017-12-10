@@ -45,6 +45,10 @@ void Inflights::Reset()
     count_ = 0;
 }
 
+Progress::Progress(uint64_t next, Inflights* inflight):next_(next),inflights_(inflight)
+{
+}
+
 void Progress::ResetState(ProgressStateType state)
 {
     paused_ = false;
