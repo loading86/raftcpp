@@ -32,7 +32,10 @@ bool IsHardStateEmpty(raftpb::HardState& state)
     return state.term() == 0 && state.vote() == 0 && state.commit() == 0;
 }
 
-
+bool IsSnapshotEmpty(const raftpb::Snapshot& ss)
+{
+    return ss.metadata().index() == 0;
+}
 std::random_device rd;
 int32_t RandomNum(int32_t scale)
 {

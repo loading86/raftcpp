@@ -58,6 +58,7 @@ public:
     Inflights* GetInflights(){return inflights_;}
     uint64_t Match(){return match_;}
     bool IsLearner(){return is_learner_;}
+    uint64_t Next(){return next_;}
 };
 }
 #endif

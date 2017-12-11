@@ -753,22 +753,127 @@ bool Raft::Restore(const raftpb::Snapshot& snap)
         raft_log_->CommitTo(snap.metadata().index());
         return false;
     }
-    if(!is_learner_)
+//    if(!is_learner_)
+//    {
+//        int32_t learner_num = snap.metadata().conf_state().learners_size();
+//        for(int i = 0; i < learner_num; i++)
+//        {
+//            if(_id == snap.metadata().conf_state().learners(i))
+//            {
+//                return false;
+//            }
+//        }
+//    }
+    raft_log_->Restore(snap);
+    peers_.clear();
+    for(int i = 0; i < snap.metadata().conf_state().nodes_size(); i++)
     {
-        int32_t learner_num = snap.metadata().conf_state().learners_size();
-        for(int i = 0; i < learner_num; i++)
+        uint64_t match = 0;
+        uint64_t next = raft_log_->LastIndex() +  1;
+        uint64_t node = snap.metadata().conf_state().nodes(i);
+        if(node == id_)
         {
-            if(_id == snap.metadata().conf_state().learners(i))
+            match = next - 1;
+        }
+        SetProgress(node, match, next);
+    }
+    return true;
+}
+
+bool Raft::HasLeader()
+{
+    return lead_ != 0;
+}
+
+SoftState* Raft::GetSoftState()
+{
+    return new SoftState(lead_, state_);
+}
+
+raftpb::HardState Raft::GetHardState()
+{
+    raftpb::HardState hs;
+    hs.set_term(term_);
+    hs.set_vote(vote_);
+    hs.set_commit(raft_log_->Commited());
+    return hs;
+}
+
+std::vector<uint64_t> Raft::Nodes()
+{
+    std::vector<uint64_t> nodes;
+    for(auto& peer: peers_)
+    {
+        nodes.push_back(peer.first);
+    }
+    return nodes;
+}
+
+void Raft::SendAppend(uint64_t to)
+{
+    Progress* pr = peers_[to];
+    if(pr->IsPaused())
+    {
+        return;
+    }
+    raftpb::Message msg;
+    msg.set_to(to);
+    uint64_t term;
+    int32_t term_ret = raft_log_->Term(pr->Next() - 1, term);
+    std::vector<raftpb::Entry> entries;
+    int32_t ents_ret = raft_log_->Entries(pr->Next(), max_msg_size_, entries);
+    if(term_ret != 0 || ents_ret != 0)
+    {
+        if(!pr->RecentActive())
+        {
+            return;
+        }
+        msg.set_type(raftpb::MsgSnap);
+        raftpb::Snapshot ss;
+        int32_t snap_ret = raft_log_->Snapshot(ss);
+        if(snap_ret != 0)
+        {
+            if(snap_ret == ErrSnapshotTemporarilyUnavailable)
             {
-                return false;
+                return;
+            }
+            //todo
+        }
+        if(IsSnapshotEmpty(ss))
+        {
+            //todo
+        }
+        msg.set_allocated_snapshot(&ss);
+        pr->BecomeSnapshot(ss.metadata().index());
+    }else
+    {
+        msg.set_type(raftpb::MsgApp);
+        msg.set_index(pr->Next() - 1);
+        msg.set_logterm(term);
+        for(auto& ent: entries)
+        {
+           raftpb::Entry* entry = msg.add_entries();
+           *entry = ent;
+        }
+        msg.set_commit(raft_log_->Commited());
+        if(!entries.empty())
+        {
+            switch(pr->State())
+            {
+                case ProgressStateReplicate:
+                    uint64_t last_index = entries[entries.size() - 1].index();
+                    pr->OptimisticUpdate(last_index);
+                    pr->GetInflights()->Add(last_index);
+                    break;
+                case ProgressStateProbe:
+                    pr->Pause();
+                    break;
+                default:
+                    //todo
             }
         }
     }
-    raft_log_->Restore(snap);
-    peers_.clear();
-    learner_peers_.clear();
-    RestoreNode();
-    RestoreNode();
+    Send(msg);
 }
 
 }

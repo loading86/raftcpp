@@ -16,7 +16,12 @@ enum StateType {
     StateLeader = 2,
     StatePreCandidate = 3
 };
-
+struct SoftState
+{
+    uint64_t lead_;
+    StateType raft_state_;
+    SoftState(uint64_t lead, StateType raft_state):lead_(lead),raft_state_(raft_state){}
+};
 const std::string kCampaignPreElection = "CampaignPreElection";
 const std::string kCampaignElection = "CampaignElection";
 const std::string kCampaignTransfer = "CampaignTransfer";
