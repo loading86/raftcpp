@@ -35,9 +35,11 @@ private:
     uint64_t pending_snaphot_;
     bool recent_active_;
     Inflights* inflights_;
-
+    bool is_learner_;
 public:
     Progress(uint64_t next, Inflights* inflight);
+    Progress(uint64_t next, uint64_t match, Inflights* inflight);
+    Progress(uint64_t next, uint64_t match, Inflights* inflight, bool is_learner);
     void ResetState(ProgressStateType state);
     void BecomeProbe();
     void BecomeReplicate();
@@ -50,6 +52,12 @@ public:
     bool IsPaused();
     void SnapshotFailure();
     bool NeedSnapshotAbort();
+    void SetRecentActive(bool active){ recent_active_ = active; }
+    bool RecentActive(){return recent_active_;}
+    ProgressStateType State(){return state_;}
+    Inflights* GetInflights(){return inflights_;}
+    uint64_t Match(){return match_;}
+    bool IsLearner(){return is_learner_;}
 };
 }
 #endif

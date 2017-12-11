@@ -270,7 +270,505 @@ void Raft::StepLeader(raftpb::Message& msg)
             {
                 return;
             }
+            int32_t entry_num = msg.entries_size();
+            std::vector<raftpb::Entry> entries;
+            for(int i = 0; i < entry_num; i++)
+            {
+                raftpb::Entry* entry = msg.mutable_entries(i);
+                if(entry->type() == raftpb::EntryConfChange)
+                {
+                    if(pending_conf_)
+                    {
+                        raftpb::Entry replace_entry;
+			            replace_entry.set_type(raftpb::EntryNormal);
+			            *entry = replace_entry;
+                    }
+		            pending_conf_ = true;
+                }
+                entries.push_back(*entry);
+            }
+            AppendEntries(entries);
+            BroadcastAppend();
+            return;
+       case raftpb::MsgReadIndex:
+            if(Quorum() > 1)
+            {
+                uint64_t term;
+                int32_t ret = raft_log_->Term(raft_log_->Commited(), term);
+                if(raft_log_->ZeroTermOnErrCpmpacted(term, ret) != term_)
+                {
+                    return;
+                }
+                switch(read_only_->Option())
+                {
+                    case ReadOnlySafe:
+                        read_only_->AddRequest(raft_log_->Commited(), msg);
+                        BroadcastHeartbeatWithCtx(msg.entry(0).data());
+                        break;
+                    case ReadOnlyLeaseBased:
+                        uint64_t raft_commited = raft_log_->Commited();
+                        if(msg.from() == 0 || msg.from() == id_)
+                        {
+                            ReadState state(raft_commited, msg.entry(0).data());
+                            read_states_.push_back(state);
+                        }else
+                        {
+                            raftpb::Message meg_send;
+                            meg_send.set_to(msg.from());
+                            msg_send.set_type(raftpb::MsgReadIndexResp);
+                            msg_send.set_index(raft_commited);
+                            for(int i = 0; i < msg.entries_size(); i++)
+                            {
+                                raftpb::Entry* entry = msg_send.add_entries();
+                                *entry = msg.entry(i);
+                            }
+
+                        }
+                }
+            }else
+            {
+                ReadState state(raft_log_->Commited(), msg.entry(0).data());
+                read_states_.push_back(state);
+            }
+            return;
+       case default:
+            break;
+    }
+
+    Progress* pr = GetProgress(msg.from());
+    if(!pr)
+    {
+        logger_->Info("no progress available");
+        return;
+    }
+    switch(msg.type())
+    {
+        case raftpb::MsgAppResp:
+            pr->SetRecentActive(true);
+            if(msg.reject())
+            {
+                if(pr->MaybeDecrTo(msg.index(), msg.rejecthint()))
+                {
+                    if(pr->State() == ProgressStateReplicate)
+                    {
+                        pr->BecomeProbe();
+                    }
+                    SendAppend(msg.from());
+                }
+            }else
+            {
+                bool old_paused = pr->IsPaused();
+                if(pr->MaybeUpdate(msg.index()))
+                {
+                    if(pr->State() == ProgressStateProbe)
+                    {
+                        pr->BecomeReplicate();
+                    }else if(pr->State() == ProgressStateSnapshot && pr->NeedSnapshotAbort())
+                    {
+                        pr->BecomeProbe();
+                    }else if(pr->State() == ProgressStateReplicate)
+                    {
+                        pr->GetInflights()->FreeTo(msg.index());
+                    }
+                    if(MaybeCommit())
+                    {
+                        BroadcastAppend();
+                    }else if(old_paused)
+                    {
+                        SendAppend(msg.from());
+                    }
+                    if(msg.from() == lead_transferee_ && pr->Match() == raft_log_->LastIndex())
+                    {
+                        SendTimeoutNow(msg.from());
+                    }
+                }
+            }
+            break;
+         case raftpb::MsgHeartbeatResp:
+            pr->SetRecentActive(true);
+            pr->Resume();
+            if(pr->State() == ProgressStateReplicate && pr->GetInflights()->Full())
+            {
+                pr->GetInflights()->FreeFirstOne();
+            }
+            if(pr->Match() < raft_log_->LastIndex())
+            {
+                SendAppend(msg.from());
+            }
+            if(read_only_->Option() != ReadOnlySafe || msg.context().empty())
+            {
+                return;
+            }
+            int32_t ack_count = read_only_->RecvAck(msg);
+            if(ack_count < Quorum())
+            {
+                return;
+            }
+            std::vector<ReadIndexStatus*> status;
+            read_only_->Advance(msg, status);
+            for(auto& st: status)
+            {
+                raftpb::Message req = st.GetRequest();
+                if(req.from() == 0 || req.fro,() == id_)
+                {
+                    ReadState state(req.index(), req.entry(0).data());
+                    read_states_.push_back(state);
+                }else
+                {
+                    raftpb::Message meg_send;
+                    meg_send.set_to(req.from());
+                    msg_send.set_type(raftpb::MsgReadIndexResp);
+                    msg_send.set_index(req.index());
+                    for(int i = 0; i < req.entries_size(); i++)
+                    {
+                        raftpb::Entry* entry = msg_send.add_entries();
+                        *entry = req.entry(i);
+                    }
+                    Send(msg_send);
+                }
+            }
+            break;
+        case raftpb::MsgSnapStatus:
+            if(pr->State() != ProgressStateSnapshot)
+            {
+                return;
+            }
+            if(!msg.reject())
+            {
+                pr->BecomeProbe();
+            }else
+            {
+                pr->SnapshotFailure();
+                pr->BecomeProbe();
+            }
+            pr->Pause();
+           break;
+       case raftpb::MsgUnreachable:
+           if(pr->Status() == ProgressStateReplicate)
+           {
+                pr->BecomeProbe();
+           }
+           break;
+       case raftpb::MsgTransferLeader:
+            if(pr->IsLearner())
+            {
+                return;
+            }
+            uint64_t lead_transferee = msg.from();
+            uint64_t last_lead_transferee = lead_transferee_;
+            if(last_lead_transferee != 0)
+            {
+                if(last_lead_transferee == lead_transferee)
+                {
+                    return;
+                }
+                AbortLeaderTransfer();
+            }
+            if(lead_transferee == id_)
+            {
+                return;
+            }
+            election_elapsed_ = 0;
+            lead_transferee_ = lead_transferee;
+            if(pr->Match() == raft_log_->LastIndex())
+            {
+                SendTimeoutNow(lead_transferee);
+            }else
+            {
+                SendAppend(lead_transferee);
+            }
+            break;
+        default:
+            break;
+
     }
 }
+
+Progress* Raft::GetProgress(uint64_t id)
+{
+    if(peers_.find(id) != peers_.end())
+    {
+        return peers_[id];
+    }
+    if(learner_peers_.find(id) != learner_peers_.end())
+    {
+        return learner_peers_[id];
+    }
+    return nullptr;
 }
+
+void Raft::RemoveNode(uint64_t id)
+{
+    DelProgress(id);
+    pending_conf_ = false;
+    if(peers_.empty() && learner_peers_.empty())
+    {
+        return;
+    }
+    if(MaybeCommit())
+    {
+        BroadcastAppend();
+    }
+    if(state_ == StateLeader && lead_transferee_ == id)
+    {
+        AbortLeaderTransfer();
+    }
+}
+
+void Raft::DelProgress(uint64_t id)
+{
+    auto it_learner = learner_peers_.find(id);
+    if(it_learner != learner_peers_.end())
+    {
+        delete it_learner->second;
+        peers_.erase(it_learner);
+    }
+    auto it = peers_.find(id);
+    if(it != peers_.end())
+    {
+        delete it->second;
+        peers_.erase(it);
+    }
+}
+void Raft::SetProgress(uint64_t id, uint64_t match, uint64_t next, bool is_learner)
+{
+    if(!is_learner)
+    {
+        DelProgress(id);
+        Progress* p = new Progress(next, match, Inflights:NewInflights(max_inflight_));
+        peers_[id] = p;
+        return;
+    }
+    auto it = peers_.find(id);
+    if(it != peers_.end())
+    {
+        //todo
+        logger_->Trace("can not change role from voter to learner");
+        return;
+    }
+    Progress* p = new Progress(next, match, Inflights:NewInflights(max_inflight_), true);
+    learner_peers_[id] = p;
+}
+
+void Raft::FromLearnerToVoter(uint64_t id)
+{
+    Progress* p = learner_peers_[id];
+    peers_[id] = p;
+    learner_peers_.erase(id);
+}
+
+void Raft::AddNodeOrLearnerNode(uint64_t id, bool is_learner)
+{
+    pending_conf_ = false;
+    Progress* pr = GetProgress(id);
+    if(!pr)
+    {
+        SetProgress(id, 0, raft_log_->LastIndex() + 1, is_learner);
+    }else
+    {
+        if(is_learner && !pr->IsLearner())
+        {
+            return;
+        }
+        if(is_learner == pr->IsLearner())
+        {
+            return;
+        }
+        FromLearnerToVoter(id);
+    }
+    if(id == id_)
+    {
+        is_learner_ = is_learner;
+    }
+    Progress* pr = GetProgress(id);
+    pr->SetRecentActive(true);
+}
+
+
+void Raft::AddNode(uint64_t id)
+{
+    AddNodeOrLearnerNode(id, false);
+}
+
+void Raft::AddLearner(uint64_t id)
+{
+    AddNodeOrLearnerNode(id, true);
+}
+
+bool Raft::Promotable(uint64_t id)
+{
+    return peers_.find(id) != peers_.end();
+}
+
+void Raft::RestPendingConf()
+{
+    pending_conf_ = false;
+}
+
+bool Raft::PastElectionTimeOut()
+{
+    return election_elapsed_ > randomized_elction_timeout_;
+}
+
+void Raft::ResetRandomizedElctionTimeout()
+{
+    randomized_elction_timeout_ = elction_timeout_ + RandomNum(elction_timeout_);
+}
+}
+
+bool Raft::CheckQuorumActive()
+{
+    int32_t act = 0;
+    for_each(peers_.begin(), peers_.end(), [&](std::peer<uint64_t, Progress*> p)
+        {
+            if(p.first == id_ || p.second->RecentActive())
+            {
+                act++;
+            }
+            p.second->SetRecentActive(false);
+         });
+    return act >= Quorum();
+}
+
+void Raft::SendTimeoutNow(uint64_t to)
+{
+    raftpb::Message msg;
+    msg.set_to(to);
+    msg.set_type(raftpb::MsgTimeoutNow);
+    Send(msg);
+}
+
+void Raft::Send(raftpb::Message& msg)
+{
+    msg.set_from(id_);
+    int32_t msg_type = msg.type();
+    if(msg_type == raftpb::MsgVote || msg_type == raftpb::MsgVoteResp || msg_type == raftpb::MsgPreVote || msg_type == raftpb::MsgPreVoteResp)
+    {
+        if(msg.term() == 0)
+        {
+            //todo
+            return;
+        }
+    }else
+    {
+        if(msg.term() != 0)
+        {
+            //todo
+            return;
+        }
+        if(msg.term() != raftpb::MsgProp || msg.term() != raftpb::MsgReadIndex)
+        {
+            msg.set_term(term_);
+        }
+    }
+    msgs_.push_back(msg);
+}
+
+void Raft::AbortLeaderTransfer()
+{
+    lead_transferee_ = 0;
+}
+
+int32_t Raft::NumOfPendingConf(std::vector<raftpb::Entry>& entries)
+{
+    return count_if(entries.begin(), entries.end(), [](raftpb::Entry& ent){return ent.type() == raftpb::EntryConfChange;});
+}
+
+void Raft::HandleAppendEntries(raftpb::Message& msg)
+{
+    if(msg.index() < raft_log_->Commited())
+    {
+        raftpb::Message send;
+        send.set_to(msg.from());
+        send.set_type(raftpb::MsgAppResp);
+        send.set_index(raft_log_->Commited());
+        Send(send);
+        return;
+    }
+    std::vector<raftpb::Entry> entries;
+    for(int i = 0; i < msg.entries_size(); i++)
+    {
+        entries.push_back(msg.entry(i));
+    }
+    uint64_t lastnewi;
+    int32_t ret = raft_log_->MaybeAppend(msg.index(), msg.logterm(), msg.commit(), entries, lastnewi);
+    if(ret == 0)
+    {
+        raftpb::Message send;
+        send.set_to(msg.from());
+        send.set_type(raftpb::MsgAppResp);
+        send.set_index(lastnewi);
+        Send(send);
+    }else
+    {
+        raftpb::Message send;
+        send.set_to(msg.from());
+        send.set_type(raftpb::MsgAppResp);
+        send.set_index(msg.index());
+        send.set_reject(true);
+        send.set_rejecthint(raft_log_->LastIndex());
+        Send(send);
+    }
+}
+
+void Raft::HandleHeartBeat(raftpb::Message& msg)
+{
+    raft_log_->CommitTo(msg.commit());
+    raftpb::Message send;
+    send.set_to(msg.from());
+    send.set_type(raftpb::MsgHeartbeatResp);
+    send.set_context(msg.context());
+    Send(send);
+}
+
+void Raft::HandleSnap(raftpb::Message& msg)
+{
+    uint64_t snap_index = msg.snapshot().metadata().index();
+    uint64_t snap_term = msg.snapshot().metadata().term();
+    if(Restore(msg.snapshot()))
+    {
+        raftpb::Message send;
+        send.set_to(msg.from());
+        send.set_type(raftpb::MsgAppResp);
+        send.set_index(raft_log_->LastIndex());
+        Send(send);
+    }else
+    {
+        raftpb::Message send;
+        send.set_to(msg.from());
+        send.set_type(raftpb::MsgAppResp);
+        send.set_index(raft_log_->Commited());
+        Send(send);
+    }
+}
+
+bool Raft::Restore(const raftpb::Snapshot& snap)
+{
+    if(snap.metadata().index() <= raft_log_->Commited())
+    {
+        return false;
+    }
+    if(raft_log_->MatchTerm(snap.metadata().index(), snap.metadata().term()))
+    {
+        raft_log_->CommitTo(snap.metadata().index());
+        return false;
+    }
+    if(!is_learner_)
+    {
+        int32_t learner_num = snap.metadata().conf_state().learners_size();
+        for(int i = 0; i < learner_num; i++)
+        {
+            if(_id == snap.metadata().conf_state().learners(i))
+            {
+                return false;
+            }
+        }
+    }
+    raft_log_->Restore(snap);
+    peers_.clear();
+    learner_peers_.clear();
+    RestoreNode();
+    RestoreNode();
+}
+
 }

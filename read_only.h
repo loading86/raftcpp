@@ -25,7 +25,7 @@ public:
     ReadIndexStatus(const raftpb::Message& request, uint64_t index);
     void Ack(uint64_t index);
     int32_t AckNum() { return acks_.size(); }
-    raftpb::Message& GetRequest() { return request_; }
+    raftpb::Message GetRequest() { return request_; }
 };
 class ReadOnly {
 private:
@@ -40,6 +40,7 @@ public:
     int32_t RecvAck(const raftpb::Message& message);
     int32_t Advance(const raftpb::Message& message, std::vector<ReadIndexStatus*>& status);
     std::string LastPendingRequest();
+    ReadOnlyOption Option(){return option_;}
 };
 }
 #endif

@@ -49,6 +49,14 @@ Progress::Progress(uint64_t next, Inflights* inflight):next_(next),inflights_(in
 {
 }
 
+Progress::Progress(uint64_t next, uint64_t match, Inflights* inflight):next_(next),match_(match),inflights_(inflight)
+{
+}
+
+Progress::Progress(uint64_t next, uint64_t match, Inflights* inflight, bool is_learner):next_(next),match_(match),inflights_(inflight), is_learner_(is_learner)
+{
+}
+
 void Progress::ResetState(ProgressStateType state)
 {
     paused_ = false;

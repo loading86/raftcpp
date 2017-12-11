@@ -48,9 +48,10 @@ public:
     bool IsUpToDate(uint64_t index, uint64_t term);
     bool MatchTerm(uint64_t index, uint64_t term);
     bool MaybeCommit(uint64_t index, uint64_t term);
-    void Restore(raftpb::Snapshot& ss);
+    void Restore(const raftpb::Snapshot& ss);
     int32_t MustCheckOutOfBounds(uint64_t lo, uint64_t hi);
     uint64_t Commited(){return commited_;}
     void SetCommited(uint64_t commited){ commited_ = commited;}
+    uint64_t ZeroTermOnErrCpmpacted(uint64_t term, int32_t error);
 };
 }

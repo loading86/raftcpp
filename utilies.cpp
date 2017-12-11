@@ -1,5 +1,7 @@
 #include "utilies.h"
+#include <time.h>
 #include <algorithm>
+#include <random>
 namespace raft {
 void LimitSize(std::vector<raftpb::Entry>& entries, uint64_t max_size)
 {
@@ -28,5 +30,12 @@ bool IsHardStateEqual(raftpb::HardState& left, raftpb::HardState& right)
 bool IsHardStateEmpty(raftpb::HardState& state)
 {
     return state.term() == 0 && state.vote() == 0 && state.commit() == 0;
+}
+
+
+std::random_device rd;
+int32_t RandomNum(int32_t scale)
+{
+    return rd() % scale;
 }
 }

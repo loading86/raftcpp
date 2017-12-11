@@ -365,9 +365,23 @@ bool RaftLog::MaybeCommit(uint64_t index, uint64_t term)
     return false;
 }
 
-void RaftLog::Restore(raftpb::Snapshot& ss)
+void RaftLog::Restore(const raftpb::Snapshot& ss)
 {
     commited_ = ss.mutable_metadata()->index();
     unstable_->Restore(&ss);
+}
+
+uint64_t RaftLog::ZeroTermOnErrCpmpacted(uint64_t term, int32_t error)
+{
+    if(error == 0)
+    {
+        return term;
+    }
+    if(error == ErrCompacted)
+    {
+        return 0;
+    }
+    logger_->Trace("unexpected error");
+    return 0;
 }
 }

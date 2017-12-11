@@ -49,7 +49,9 @@ private:
     int32_t max_inflight_;
     uint64_t max_msg_size_;
     std::map<uint64_t, Progress*> peers_;
+    std::map<uint64_t, Progress*> learner_peers_;
     StateType state_;
+    bool is_learner_;
     std::map<uint64_t, bool> votes_;
     std::vector<raftpb::Message> msgs_;
     uint64_t lead_;
