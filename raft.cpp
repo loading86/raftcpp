@@ -809,6 +809,26 @@ std::vector<uint64_t> Raft::Nodes()
     return nodes;
 }
 
+void Raft::AllNodesExceptMe(std::vector<uint64_t>& nodes)
+{
+    for(auto& peer: peers_)
+    {
+        if(peer.first == id_)
+        {
+            continue;
+        }
+        nodes.push_back(peer.first);
+    }
+    for(auto& peer: learner_peers_)
+    {
+        if(peer.first == id_)
+        {
+            continue;
+        }
+        nodes.push_back(peer.first);
+    }
+}
+
 void Raft::SendAppend(uint64_t to)
 {
     Progress* pr = peers_[to];
@@ -874,6 +894,57 @@ void Raft::SendAppend(uint64_t to)
         }
     }
     Send(msg);
+}
+
+void Raft::SendHeartbeat(uint64_t to, const std::string& ctx)
+{
+    Progress* pr = GetProgress(to);
+    uint64_t commit = std::min(pr->Match(), raft_log_->Commited());
+    raftpb::Message msg;
+    msg.set_to(to);
+    msg.set_type(raftpb::MsgHeartbeat);
+    msg.set_commit(commit);
+    msg.set_context(ctx);
+    Send(msg);
+}
+
+void Raft::BroadcastAppend()
+{
+    std::vector<uint64_t> nodes;
+    AllNodesExceptMe(nodes);
+    for(auto id: nodes)
+    {
+        SendAppend(id);
+    }
+}
+
+void Raft::BroadcastHeartbeatWithCtx(const std::string& ctx)
+{
+    std::vector<uint64_t> nodes;
+    AllNodesExceptMe(nodes);
+    for(auto id: nodes)
+    {
+        SendHeartbeat(id, ctx);
+    }
+}
+
+void Raft::BroadcastHeartbeat()
+{
+    std::string msg = read_only_->LastPendingRequest();
+    BroadcastHeartbeatWithCtx(msg);
+}
+
+bool Raft::MaybeCommit()
+{
+    std::vector<uint64_t> matchs;
+    for(auto& p: peers_)
+    {
+        matchs.push_back(p.second->Match());
+    }
+    std::sort(matchs.begin(), matchs.end());
+    std::reverse(matchs.begin(), matchs.end());
+    uint64_t match = matchs[Quorum() - 1];
+    return raft_log_->MaybeCommit(match, term_);
 }
 
 }
