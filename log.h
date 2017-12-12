@@ -53,5 +53,6 @@ public:
     uint64_t Commited(){return commited_;}
     void SetCommited(uint64_t commited){ commited_ = commited;}
     uint64_t ZeroTermOnErrCpmpacted(uint64_t term, int32_t error);
+    uint64_t Applied(){return applied_;}
 };
 }

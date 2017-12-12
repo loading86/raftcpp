@@ -57,6 +57,7 @@ public:
     ProgressStateType State(){return state_;}
     Inflights* GetInflights(){return inflights_;}
     uint64_t Match(){return match_;}
+    void SetMatch(uint64_t match){ match_ = match;}
     bool IsLearner(){return is_learner_;}
     uint64_t Next(){return next_;}
 };

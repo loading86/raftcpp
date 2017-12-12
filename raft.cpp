@@ -117,6 +117,53 @@ void Raft::LoadState(raftpb::HardState& state)
     vote_ = state.vote();
 }
 
+int32_t Raft::Step(raftpb::Message& msg)
+{
+    if(msg.term() > term_)
+    {
+        if(msg.type() == raftpb::MsgVote || msg.type() == raftpb::MsgPreVote)
+        {
+            bool force = msg.context() == kCampaignTransfer;
+            bool in_lease = check_quorum_ && lead_ != 0 && election_elapsed_ < elction_timeout_;
+            if((!force) && in_lease)
+            {
+                return 0;
+            }
+        }
+        if(msg.type() == raftpb::MsgPreVote || (msg.type() == raftpb::MsgPreVoteResp && !msg.reject()) )
+        {
+        }else
+        {
+            if(msg.type() == raftpb::MsgApp || msg.type() == raftpb::MsgHeartbeat || msg.type() == raftpb::MsgSnap)
+            {
+                BecomeFollower(term_, msg.from());
+            }else
+            {
+                BecomeFollower(term_, 0);
+            }
+        }
+    }else if(msg.term() < term_)
+    {
+        if(check_quorum_ && (msg.type() == raftpb::MsgApp || msg.type() == raftpb::MsgHeartbeat))
+        {
+            raftpb::Message msg;
+            msg.set_to(msg.from());
+            msg.set_type(raftpb::MsgAppResp);
+            Send(msg);
+        }
+        return 0;
+    }
+    switch(msg.type())
+    {
+        case raftpb::MsgHup:
+            if(state_ != StateLeader)
+            {
+                std::vector<raftpb::Entry> entries;
+                int32_t ret = raft_log_->Slice(raft_log_->Applied() + 1, raft_log_->Commited() + 1, UINT64_MAX, entries);
+            }
+    }
+}
+
 void Raft::StepFollower(raftpb::Message& msg)
 {
     switch(msg.type())
@@ -946,5 +993,67 @@ bool Raft::MaybeCommit()
     uint64_t match = matchs[Quorum() - 1];
     return raft_log_->MaybeCommit(match, term_);
 }
+
+void Raft::Reset(uint64_t term)
+{
+    if(term != term_)
+    {
+        term_ = term;
+        votes_ = 0;
+    }
+    lead_ = 0;
+    election_elapsed_ = 0;
+    heart_beat_elapsed_ = 0;
+    ResetRandomizedElctionTimeout();
+    AbortLeaderTransfer();
+    votes_.clear();
+    for(auto& p: peers_)
+    {
+        delete p.second;
+        p.second = new Progress(raft_log_->LastIndex() + 1, 0, Inflights::NewInflight(max_inflight_msgs_, false));
+        if(p.first == id_)
+        {
+            p.second->SetMatch(raft_log_->LastIndex());
+        }
+    }
+    for(auto& p: learner_peers_)
+    {
+        delete p.second;
+        p.second = new Progress(raft_log_->LastIndex() + 1, 0, Inflights::NewInflight(max_inflight_msgs_, true));
+    }
+    pending_conf_ = false;
+    ReadOnly* tmp = read_only_;
+    read_only_ = ReadOnly::NewReadOnly(tmp->Option());
+    delete tmp;
+}
+
+void Raft::AppendEntries(std::vector<raftpb::Entry>& entries)
+{
+    uint64_t last_index = raft_log_->LastIndex();
+    for(int i = 0; i < entries.size(); i++)
+    {
+        entries[i].set_term(term_);
+        entries[i].set_index(last_index + 1 + i);
+    }
+    raft_log_->Append(entries, last_index);
+    Progress* pr = GetProgress(id_);
+    pr->MayUpdate(raft_log_->LastIndex());
+    MaybeCommit();
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 }

@@ -64,6 +64,7 @@ private:
     bool pending_conf_;
     ReadOnly* read_only_;
     int32_t election_elapsed_;
+    int32_t heart_beat_elapsed_
     bool check_quorum_;
     bool pre_vote_;
     int32_t heart_beat_timeout_;
