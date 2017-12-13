@@ -7,11 +7,11 @@ using namespace std;
 namespace raft {
 class RaftLog {
 private:
-    Storage* storage_;
-    Unstable* unstable_;
-    uint64_t commited_;
-    uint64_t applied_;
-    Logger* logger_;
+    Storage* storage_ = nullptr;
+    Unstable* unstable_ = nullptr;
+    uint64_t commited_ = 0;
+    uint64_t applied_ = 0;
+    Logger* logger_ = nullptr;
 
 private:
     RaftLog(Storage* storage, Logger* logger);
@@ -48,7 +48,7 @@ public:
     bool IsUpToDate(uint64_t index, uint64_t term);
     bool MatchTerm(uint64_t index, uint64_t term);
     bool MaybeCommit(uint64_t index, uint64_t term);
-    void Restore(const raftpb::Snapshot& ss);
+    void Restore(raftpb::Snapshot& ss);
     int32_t MustCheckOutOfBounds(uint64_t lo, uint64_t hi);
     uint64_t Commited(){return commited_;}
     void SetCommited(uint64_t commited){ commited_ = commited;}

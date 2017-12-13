@@ -10,14 +10,14 @@ enum ReadOnlyOption {
     ReadOnlyLeaseBased = 1
 };
 struct ReadState {
-    uint64_t index_;
+    uint64_t index_ = 0;
     std::string request_ctx_;
     ReadState(uint64_t index, const std::string& request_ctx):index_(index),request_ctx_(request_ctx){}
 };
 class ReadIndexStatus {
 private:
     raftpb::Message request_;
-    uint64_t index_;
+    uint64_t index_ = 0;
     std::map<uint64_t, bool> acks_;
 
 public:
@@ -29,7 +29,7 @@ public:
 };
 class ReadOnly {
 private:
-    ReadOnlyOption option_;
+    ReadOnlyOption option_ = ReadOnlySafe;
     std::map<std::string, ReadIndexStatus*> pending_read_index_;
     std::vector<std::string> read_index_queue_;
     ReadOnly(ReadOnlyOption& option);

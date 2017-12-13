@@ -11,9 +11,9 @@ enum ProgressStateType {
 
 class Inflights {
 private:
-    int32_t start_;
-    int32_t count_;
-    int32_t size_;
+    int32_t start_ = 0;
+    int32_t count_ = 0;
+    int32_t size_ = 0;
     std::list<uint64_t> buffer_;
     Inflights(int size);
 
@@ -28,14 +28,14 @@ public:
 };
 class Progress {
 private:
-    uint64_t match_;
-    uint64_t next_;
-    ProgressStateType state_;
-    bool paused_;
-    uint64_t pending_snaphot_;
-    bool recent_active_;
-    Inflights* inflights_;
-    bool is_learner_;
+    uint64_t match_ = 0;
+    uint64_t next_ = 0;
+    ProgressStateType state_ = ProgressStateProbe;
+    bool paused_ = false;
+    uint64_t pending_snaphot_ = 0;
+    bool recent_active_ = false;
+    Inflights* inflights_ = nullptr;
+    bool is_learner_ = false;
 public:
     Progress(uint64_t next, Inflights* inflight);
     Progress(uint64_t next, uint64_t match, Inflights* inflight);

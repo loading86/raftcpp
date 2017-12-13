@@ -365,9 +365,9 @@ bool RaftLog::MaybeCommit(uint64_t index, uint64_t term)
     return false;
 }
 
-void RaftLog::Restore(const raftpb::Snapshot& ss)
+void RaftLog::Restore(raftpb::Snapshot& ss)
 {
-    commited_ = ss.mutable_metadata()->index();
+    commited_ = ss.metadata().index();
     unstable_->Restore(&ss);
 }
 

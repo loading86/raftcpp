@@ -6,10 +6,10 @@
 namespace raft {
 class Unstable {
 private:
-    raftpb::Snapshot* snapshot_;
+    raftpb::Snapshot* snapshot_ = nullptr;
     std::vector<raftpb::Entry> entries_;
-    uint64_t offset_;
-    Logger* logger_;
+    uint64_t offset_ = 0;
+    Logger* logger_ = nullptr;
 
 public:
     Unstable();
