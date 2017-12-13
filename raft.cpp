@@ -160,8 +160,56 @@ int32_t Raft::Step(raftpb::Message& msg)
             {
                 std::vector<raftpb::Entry> entries;
                 int32_t ret = raft_log_->Slice(raft_log_->Applied() + 1, raft_log_->Commited() + 1, UINT64_MAX, entries);
+                if(ret != 0)
+                {
+                    exit(1);
+                }
+                int32_t num_of_pending_conf = NumOfPendingConf(entries);
+                if(num_of_pending_conf != 0 && raft_log_->Commited() > raft_log_->Applied())
+                {
+                    return 0;
+                }
+                if(pre_vote_)
+                {
+                    Compaign(kCampaignElection);
+                }else
+                {
+                    Compaign(kCampaignPreElection);
+                }
             }
+            break;
+        case raftpb::MsgVote:
+        case raftpb::MsgPreVote:
+            if(is_learner_)
+            {
+                return 0;
+            }
+            if((vote_ == 0 || msg.term() > term_ || vote_ == msg.from()) && raft_log_->IsUpToDate(msg.index(), msg.logterm()))
+            {
+                raftpb::Message send;
+                send.set_to(msg.from());
+                send.set_term(msg.term());
+                send.set_type(VoteRespMsgType(msg.type()));
+                Send(send);
+                if(msg.type() == raftpb::MsgVote)
+                {
+                    election_elapsed_ = 0;
+                    vote_ = msg.from();
+                }
+            }else
+            {
+                raftpb::Message send;
+                send.set_to(msg.from());
+                send.set_term(msg.term());
+                send.set_type(VoteRespMsgType(msg.type()));
+                send.set_reject(true);
+                Send(send);
+            }
+            break;
+        default:
+            step_(msg);
     }
+    return 0;
 }
 
 void Raft::StepFollower(raftpb::Message& msg)
