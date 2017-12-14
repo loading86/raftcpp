@@ -41,4 +41,19 @@ int32_t RandomNum(int32_t scale)
 {
     return rd() % scale;
 }
+
+raftpb::MessageType VoteRespMsgType(raftpb::MessageType type)
+{
+    if(type == raftpb::MsgVote)
+    {
+        return raftpb::MsgVoteResp;
+    }else if(type == raftpb::MsgPreVote)
+    {
+        return raftpb::MsgPreVoteResp;
+    }else
+    {
+        exit(1);
+    }
+}
+
 }
