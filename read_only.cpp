@@ -16,12 +16,12 @@ void ReadIndexStatus::Ack(uint64_t index)
     acks_[index] = true;
 }
 
-ReadOnly::ReadOnly(ReadOnlyOption& option)
+ReadOnly::ReadOnly(const ReadOnlyOption& option)
 {
     option_ = option;
 }
 
-ReadOnly* ReadOnly::NewReadOnly(ReadOnlyOption& option)
+ReadOnly* ReadOnly::NewReadOnly(const ReadOnlyOption& option)
 {
     return new ReadOnly(option);
 }

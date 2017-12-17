@@ -20,6 +20,7 @@ public:
     static RaftLog* NewLog(Storage* storage, Logger* logger);
     int32_t FirstIndex(uint64_t& index);
     int32_t LastIndex(uint64_t& index);
+    uint64_t LastIndex();
     void UnstableEntries(std::vector<raftpb::Entry>& entries);
     int32_t MaybeAppend(uint64_t index,
         uint64_t term,
@@ -48,7 +49,7 @@ public:
     bool IsUpToDate(uint64_t index, uint64_t term);
     bool MatchTerm(uint64_t index, uint64_t term);
     bool MaybeCommit(uint64_t index, uint64_t term);
-    void Restore(raftpb::Snapshot& ss);
+    void Restore(const raftpb::Snapshot& ss);
     int32_t MustCheckOutOfBounds(uint64_t lo, uint64_t hi);
     uint64_t Commited(){return commited_;}
     void SetCommited(uint64_t commited){ commited_ = commited;}

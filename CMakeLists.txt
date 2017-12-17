@@ -8,6 +8,7 @@ SET (LIBRAFT_SRC
 	log.cpp
 	read_only.cpp
 	progress.cpp
+	status.cpp
 	raft.cpp
 )
 

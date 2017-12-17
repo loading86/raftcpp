@@ -24,6 +24,7 @@ struct SoftState {
         , raft_state_(raft_state)
     {
     }
+    SoftState(){}
 };
 const std::string kCampaignPreElection = "CampaignPreElection";
 const std::string kCampaignElection = "CampaignElection";
@@ -84,7 +85,7 @@ public:
     void LoadState(raftpb::HardState& state);
     int32_t Step(raftpb::Message& msg);
     void StepFollower(raftpb::Message& msg);
-    int32_t Poll(uint64_t id, const raftpb::Message& msg, bool vote);
+    int32_t Poll(uint64_t id, const raftpb::MessageType& msg_type, bool vote);
     int32_t Quorum();
     void StepCandidate(raftpb::Message& msg);
     void StepLeader(raftpb::Message& msg);
@@ -122,6 +123,17 @@ public:
     bool MaybeCommit();
     void Reset(uint64_t term);
     void AppendEntries(std::vector<raftpb::Entry>& entries);
+    void TickElection();
+    void TickHeartbeat();
+    void BecomeCandidate();
+    void BecomePreCandidate();
+    void BecomeLeader();
+    void Campaign(const std::string& compaign_type);
+    uint64_t GetID(){return id_;}
+    uint64_t GetLeadTransferee(){return lead_transferee_;}
+    RaftLog* GetRaftLog(){return raft_log_;}
+    void AllProgress(std::map<uint64_t, Progress*>& prog);
+    void RestoreNode(std::vector<uint64_t>& nodes, bool is_learner);
 };
 }
 #endif

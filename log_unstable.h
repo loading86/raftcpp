@@ -18,7 +18,7 @@ public:
     int32_t MaybeTerm(uint64_t index, uint64_t& term);
     void StableTo(uint64_t index, uint64_t term);
     void StableSnapTo(uint64_t index);
-    void Restore(raftpb::Snapshot* ss);
+    void Restore(const raftpb::Snapshot* ss);
     void TruncateAndAppend(const std::vector<raftpb::Entry>& entries);
     int32_t MustCheckOutOfBounds(uint64_t lo, uint64_t hi);
     void SetLogger(Logger* logger) { logger_ = logger; }

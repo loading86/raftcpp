@@ -65,11 +65,11 @@ void Unstable::StableSnapTo(uint64_t index)
     }
 }
 
-void Unstable::Restore(raftpb::Snapshot* ss)
+void Unstable::Restore(const raftpb::Snapshot* ss)
 {
     offset_ = ss->metadata().index() + 1;
     entries_.clear();
-    snapshot_ = ss;
+    snapshot_ = new raftpb::Snapshot(*ss);
 }
 
 void Unstable::TruncateAndAppend(const std::vector<raftpb::Entry>& entries)

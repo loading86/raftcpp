@@ -1,4 +1,6 @@
+#include <functional>
 #include "raft.h"
+#include "utilies.h"
 namespace raft {
 
 bool Config::Validate()
@@ -69,10 +71,10 @@ Raft* Raft::NewRaft(Config* config)
             peers.push_back(cs.nodes(i));
         }
     }
-    ReadOnly* read_only = NewReadOnly(config->read_only_option_);
-    Raft* rf = new Raft(config->id_, -1, raft_log, config->max_msg_size_, config->max_inflight_msgs_, config->elction_timeout_, config->heart_beat_timeout_, config->logger_, config->check_quorum_, config->pre_vote_, read_only);
+    ReadOnly* read_only = ReadOnly::NewReadOnly(config->read_only_option_);
+    Raft* rf = new Raft(config->id_, -1, raft_log, config->max_size_per_msg_, config->max_inflight_msgs_, config->election_tick_, config->heart_beat_tick_, config->logger_, config->check_quorum_, config->pre_vote_, read_only);
     for (auto p : peers) {
-        raft->peers_[p] = new Progress(1, Inflights::NewInflight(rf->max_inflight_msgs_));
+        rf->peers_[p] = new Progress(1, Inflights::NewInflights(rf->max_inflight_));
     }
     if (!IsHardStateEmpty(hs)) {
         rf->LoadState(hs);
@@ -85,7 +87,7 @@ Raft* Raft::NewRaft(Config* config)
 void Raft::TickElection()
 {
     election_elapsed_++;
-    if(Promotable() && PastElectionTimeOut())
+    if(Promotable(id_) && PastElectionTimeOut())
     {
         election_elapsed_ = 0;
         raftpb::Message msg;
@@ -131,7 +133,7 @@ void Raft::TickHeartbeat()
 
 void Raft::BecomeFollower(uint64_t term, uint64_t lead)
 {
-    step_ = std::bind(&Raft::StepFollower, this, _1);
+    step_ = std::bind(&Raft::StepFollower, this, std::placeholders::_1);
     Reset(term_);
     tick_ = std::bind(&Raft::TickElection, this);
     lead_ = lead;
@@ -144,7 +146,7 @@ void Raft::BecomeCandidate()
     {
         exit(1);
     }
-    step_ = std::bind(&Raft::StepCandidate, this, _1);
+    step_ = std::bind(&Raft::StepCandidate, this, std::placeholders::_1);
     Reset(term_ + 1);
     tick_ = std::bind(&Raft::TickElection, this);
     vote_ = id_;
@@ -157,7 +159,7 @@ void Raft::BecomePreCandidate()
     {
         exit(1);
     }
-    step_ = std::bind(&Raft::StepCandidate, this, _1);
+    step_ = std::bind(&Raft::StepCandidate, this, std::placeholders::_1);
     votes_.clear();
     tick_ = std::bind(&Raft::TickElection, this);
     state_ = StatePreCandidate;;
@@ -169,7 +171,7 @@ void Raft::BecomeLeader()
     {
         exit(1);
     }
-    step_ = std::bind(&Raft::StepLeader, this, _1);
+    step_ = std::bind(&Raft::StepLeader, this, std::placeholders::_1);
     Reset(term_);
     tick_ = std::bind(&Raft::TickElection, this);
     lead_ = id_;
@@ -298,7 +300,7 @@ void Raft::StepFollower(raftpb::Message& msg)
             return;
         }
         msg.set_to(lead_);
-        Send(m);
+        Send(msg);
         break;
     case raftpb::MsgApp:
         elction_timeout_ = 0;
@@ -321,10 +323,10 @@ void Raft::StepFollower(raftpb::Message& msg)
             return;
         }
         msg.set_to(lead_);
-        Send(m);
+        Send(msg);
         break;
     case raftpb::MsgTimeoutNow:
-        if (Promotable()) {
+        if (Promotable(id_)) {
             Campaign(kCampaignTransfer);
         } else {
             logger_->Info("received MsgTimeoutNow, but is not promotable");
@@ -336,32 +338,38 @@ void Raft::StepFollower(raftpb::Message& msg)
             return;
         }
         msg.set_to(lead_);
-        Send(m);
+        Send(msg);
         break;
     case raftpb::MsgReadIndexResp:
         if (msg.entries_size() != 1) {
             logger_->Info("invalid format of MsgReadIndexResp, entries count not 1");
             return;
         }
-        ReadState state(msg.index(), entries(0).data());
+        ReadState state(msg.index(), msg.entries(0).data());
         read_states_.push_back(state);
         break;
     }
 }
 
-int32_t Raft::Poll(uint64_t id, const raftpb::Message& msg, bool vote)
+int32_t Raft::Poll(uint64_t id, const raftpb::MessageType& msg_type, bool vote)
 {
     if (votes_.find(id) == votes_.end()) {
         votes_[id] = vote;
     }
     int32_t granted = 0;
-    std::for_each(votes_.begin(), votes_.end(), [&](std::pair<uint64_t, bool>& pr) { if(pr.second){ granted++ }; });
+    for(auto v: votes_)
+    {
+        if(v.second)
+        {
+            granted++;
+        }
+    }
     return granted;
 }
 
 int32_t Raft::Quorum()
 {
-    reurn peers_.size() / 2 + 1;
+    return peers_.size() / 2 + 1;
 }
 
 void Raft::StepCandidate(raftpb::Message& msg)
@@ -384,7 +392,8 @@ void Raft::StepCandidate(raftpb::Message& msg)
         break;
     case raftpb::MsgPreVoteResp:
     case raftpb::MsgVoteResp:
-        int32_t granted = Poll(msg.from(), msg, !msg.reject());
+        {
+        int32_t granted = Poll(msg.from(), msg.type(), !msg.reject());
         int32_t quorum = Quorum();
         if (quorum == granted) {
             if (state_ == StatePreCandidate) {
@@ -396,9 +405,12 @@ void Raft::StepCandidate(raftpb::Message& msg)
         } else if (quorum == votes_.size() - granted) {
             BecomeFollower(term_, -1);
         }
+        }
         break;
     case raftpb::MsgTimeoutNow:
         logger_->Info("ignore MsgTimeoutNow");
+        break;
+    default:
         break;
     }
 }
@@ -415,6 +427,7 @@ void Raft::StepLeader(raftpb::Message& msg)
         }
         return;
     case raftpb::MsgProp:
+        {
         if (msg.entries_size() == 0) {
             return;
         }
@@ -440,8 +453,10 @@ void Raft::StepLeader(raftpb::Message& msg)
         }
         AppendEntries(entries);
         BroadcastAppend();
+        }
         return;
     case raftpb::MsgReadIndex:
+        {
         if (Quorum() > 1) {
             uint64_t term;
             int32_t ret = raft_log_->Term(raft_log_->Commited(), term);
@@ -451,30 +466,32 @@ void Raft::StepLeader(raftpb::Message& msg)
             switch (read_only_->Option()) {
             case ReadOnlySafe:
                 read_only_->AddRequest(raft_log_->Commited(), msg);
-                BroadcastHeartbeatWithCtx(msg.entry(0).data());
+                BroadcastHeartbeatWithCtx(msg.entries(0).data());
                 break;
             case ReadOnlyLeaseBased:
                 uint64_t raft_commited = raft_log_->Commited();
                 if (msg.from() == 0 || msg.from() == id_) {
-                    ReadState state(raft_commited, msg.entry(0).data());
+                    ReadState state(raft_commited, msg.entries(0).data());
                     read_states_.push_back(state);
                 } else {
-                    raftpb::Message meg_send;
-                    meg_send.set_to(msg.from());
+                    raftpb::Message msg_send;
+                    msg_send.set_to(msg.from());
                     msg_send.set_type(raftpb::MsgReadIndexResp);
                     msg_send.set_index(raft_commited);
                     for (int i = 0; i < msg.entries_size(); i++) {
                         raftpb::Entry* entry = msg_send.add_entries();
-                        *entry = msg.entry(i);
+                        *entry = msg.entries(i);
                     }
+                    Send(msg_send);
                 }
             }
         } else {
-            ReadState state(raft_log_->Commited(), msg.entry(0).data());
+            ReadState state(raft_log_->Commited(), msg.entries(0).data());
             read_states_.push_back(state);
         }
+        }
         return;
-    case default:
+    default:
         break;
     }
 
@@ -515,6 +532,7 @@ void Raft::StepLeader(raftpb::Message& msg)
         }
         break;
     case raftpb::MsgHeartbeatResp:
+        {
         pr->SetRecentActive(true);
         pr->Resume();
         if (pr->State() == ProgressStateReplicate && pr->GetInflights()->Full()) {
@@ -533,24 +551,26 @@ void Raft::StepLeader(raftpb::Message& msg)
         std::vector<ReadIndexStatus*> status;
         read_only_->Advance(msg, status);
         for (auto& st : status) {
-            raftpb::Message req = st.GetRequest();
-            if (req.from() == 0 || req.fro, () == id_) {
-                ReadState state(req.index(), req.entry(0).data());
+            raftpb::Message req = st->GetRequest();
+            if (req.from() == 0 || req.from() == id_) {
+                ReadState state(req.index(), req.entries(0).data());
                 read_states_.push_back(state);
             } else {
-                raftpb::Message meg_send;
-                meg_send.set_to(req.from());
+                raftpb::Message msg_send;
+                msg_send.set_to(req.from());
                 msg_send.set_type(raftpb::MsgReadIndexResp);
                 msg_send.set_index(req.index());
                 for (int i = 0; i < req.entries_size(); i++) {
                     raftpb::Entry* entry = msg_send.add_entries();
-                    *entry = req.entry(i);
+                    *entry = req.entries(i);
                 }
                 Send(msg_send);
             }
         }
+        }
         break;
     case raftpb::MsgSnapStatus:
+        {
         if (pr->State() != ProgressStateSnapshot) {
             return;
         }
@@ -561,13 +581,15 @@ void Raft::StepLeader(raftpb::Message& msg)
             pr->BecomeProbe();
         }
         pr->Pause();
+        }
         break;
     case raftpb::MsgUnreachable:
-        if (pr->Status() == ProgressStateReplicate) {
+        if (pr->State() == ProgressStateReplicate) {
             pr->BecomeProbe();
         }
         break;
     case raftpb::MsgTransferLeader:
+        {
         if (pr->IsLearner()) {
             return;
         }
@@ -588,6 +610,7 @@ void Raft::StepLeader(raftpb::Message& msg)
             SendTimeoutNow(lead_transferee);
         } else {
             SendAppend(lead_transferee);
+        }
         }
         break;
     default:
@@ -638,8 +661,7 @@ void Raft::SetProgress(uint64_t id, uint64_t match, uint64_t next, bool is_learn
 {
     if (!is_learner) {
         DelProgress(id);
-        Progress* p = new Progress(next, match, Inflights
-                                   : NewInflights(max_inflight_));
+        Progress* p = new Progress(next, match, Inflights::NewInflights(max_inflight_));
         peers_[id] = p;
         return;
     }
@@ -649,8 +671,7 @@ void Raft::SetProgress(uint64_t id, uint64_t match, uint64_t next, bool is_learn
         logger_->Trace("can not change role from voter to learner");
         return;
     }
-    Progress* p = new Progress(next, match, Inflights
-                               : NewInflights(max_inflight_), true);
+    Progress* p = new Progress(next, match, Inflights::NewInflights(max_inflight_), true);
     learner_peers_[id] = p;
 }
 
@@ -679,7 +700,7 @@ void Raft::AddNodeOrLearnerNode(uint64_t id, bool is_learner)
     if (id == id_) {
         is_learner_ = is_learner;
     }
-    Progress* pr = GetProgress(id);
+    pr = GetProgress(id);
     pr->SetRecentActive(true);
 }
 
@@ -712,12 +733,11 @@ void Raft::ResetRandomizedElctionTimeout()
 {
     randomized_elction_timeout_ = elction_timeout_ + RandomNum(elction_timeout_);
 }
-}
 
 bool Raft::CheckQuorumActive()
 {
     int32_t act = 0;
-    for_each(peers_.begin(), peers_.end(), [&](std::peer<uint64_t, Progress*> p) {
+    for_each(peers_.begin(), peers_.end(), [&](std::pair<uint64_t, Progress*> p) {
         if (p.first == id_ || p.second->RecentActive()) {
             act++;
         }
@@ -777,7 +797,7 @@ void Raft::HandleAppendEntries(raftpb::Message& msg)
     }
     std::vector<raftpb::Entry> entries;
     for (int i = 0; i < msg.entries_size(); i++) {
-        entries.push_back(msg.entry(i));
+        entries.push_back(msg.entries(i));
     }
     uint64_t lastnewi;
     int32_t ret = raft_log_->MaybeAppend(msg.index(), msg.logterm(), msg.commit(), entries, lastnewi);
@@ -856,7 +876,7 @@ bool Raft::Restore(const raftpb::Snapshot& snap)
         int32_t learner_num = snap.metadata().conf_state().learners_size();
         for(int i = 0; i < learner_num; i++)
         {
-            if(_id == snap.metadata().conf_state().learners(i))
+            if(id_ == snap.metadata().conf_state().learners(i))
             {
                 return false;
             }
@@ -922,6 +942,16 @@ void Raft::AllNodesExceptMe(std::vector<uint64_t>& nodes)
     }
 }
 
+void Raft::AllProgress(std::map<uint64_t, Progress*>& prog)
+{
+    for (auto& peer : peers_) {
+        prog[peer.first] = new Progress(*(peer.second));
+    }
+    for (auto& peer : learner_peers_) {
+        prog[peer.first] = new Progress(*(peer.second));
+    }
+}
+
 void Raft::SendAppend(uint64_t to)
 {
     Progress* pr = peers_[to];
@@ -964,15 +994,18 @@ void Raft::SendAppend(uint64_t to)
         if (!entries.empty()) {
             switch (pr->State()) {
             case ProgressStateReplicate:
+                {
                 uint64_t last_index = entries[entries.size() - 1].index();
                 pr->OptimisticUpdate(last_index);
                 pr->GetInflights()->Add(last_index);
+                }
                 break;
             case ProgressStateProbe:
                 pr->Pause();
                 break;
             default:
                 //todo
+                break;
             }
         }
     }
@@ -1031,7 +1064,7 @@ void Raft::Reset(uint64_t term)
 {
     if (term != term_) {
         term_ = term;
-        votes_ = 0;
+        vote_ = 0;
     }
     lead_ = 0;
     election_elapsed_ = 0;
@@ -1041,14 +1074,14 @@ void Raft::Reset(uint64_t term)
     votes_.clear();
     for (auto& p : peers_) {
         delete p.second;
-        p.second = new Progress(raft_log_->LastIndex() + 1, 0, Inflights::NewInflight(max_inflight_msgs_, false));
+        p.second = new Progress(raft_log_->LastIndex() + 1, 0, Inflights::NewInflights(max_inflight_), false);
         if (p.first == id_) {
             p.second->SetMatch(raft_log_->LastIndex());
         }
     }
     for (auto& p : learner_peers_) {
         delete p.second;
-        p.second = new Progress(raft_log_->LastIndex() + 1, 0, Inflights::NewInflight(max_inflight_msgs_, true));
+        p.second = new Progress(raft_log_->LastIndex() + 1, 0, Inflights::NewInflights(max_inflight_), true);
     }
     pending_conf_ = false;
     ReadOnly* tmp = read_only_;
@@ -1065,7 +1098,7 @@ void Raft::AppendEntries(std::vector<raftpb::Entry>& entries)
     }
     raft_log_->Append(entries, last_index);
     Progress* pr = GetProgress(id_);
-    pr->MayUpdate(raft_log_->LastIndex());
+    pr->MaybeUpdate(raft_log_->LastIndex());
     MaybeCommit();
 }
 
@@ -1084,7 +1117,7 @@ void Raft::Campaign(const std::string& compaign_type)
         vote_msg_type = raftpb::MsgVote;
         term = term_;
     }
-    if(Quorum() == Poll(_id, VoteRespMsgType(vote_msg_type), true))
+    if(Quorum() == Poll(id_, VoteRespMsgType(vote_msg_type), true))
     {
         if(compaign_type == kCampaignPreElection)
         {

@@ -60,6 +60,13 @@ int32_t RaftLog::LastIndex(uint64_t& index)
     return 1;
 }
 
+uint64_t RaftLog::LastIndex()
+{
+    uint64_t index = 0;
+    LastIndex(index);
+    return index;
+}
+
 void RaftLog::UnstableEntries(std::vector<raftpb::Entry>& entries)
 {
     unstable_->Entries(entries);
@@ -365,7 +372,7 @@ bool RaftLog::MaybeCommit(uint64_t index, uint64_t term)
     return false;
 }
 
-void RaftLog::Restore(raftpb::Snapshot& ss)
+void RaftLog::Restore(const raftpb::Snapshot& ss)
 {
     commited_ = ss.metadata().index();
     unstable_->Restore(&ss);

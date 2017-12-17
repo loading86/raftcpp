@@ -23,6 +23,6 @@ void Logger::Error(const std::string& str)
 
 void Logger::Trace(const std::string& str)
 {
-    SPDLOG_TRACE(logger_, str);
+    logger_->info(str);
 }
 }

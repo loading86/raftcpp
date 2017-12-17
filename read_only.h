@@ -32,10 +32,10 @@ private:
     ReadOnlyOption option_ = ReadOnlySafe;
     std::map<std::string, ReadIndexStatus*> pending_read_index_;
     std::vector<std::string> read_index_queue_;
-    ReadOnly(ReadOnlyOption& option);
+    ReadOnly(const ReadOnlyOption& option);
 
 public:
-    static ReadOnly* NewReadOnly(ReadOnlyOption& option);
+    static ReadOnly* NewReadOnly(const ReadOnlyOption& option);
     void AddRequest(uint64_t index, const raftpb::Message& message);
     int32_t RecvAck(const raftpb::Message& message);
     int32_t Advance(const raftpb::Message& message, std::vector<ReadIndexStatus*>& status);
