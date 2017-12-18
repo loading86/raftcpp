@@ -56,4 +56,47 @@ raftpb::MessageType VoteRespMsgType(raftpb::MessageType type)
     }
 }
 
+template<typename T> ThreadSafeQueue<T>::ThreadSafeQueue()
+{
+
+}
+
+void template<typename T> ThreadSafeQueue<T>::Push(const T& elem)
+{
+    std::lock_guard<std::mutex> lock(mux_);
+    queue_.push(elem);
+    cond_.notify_one();
+}
+
+bool template<typename T> ThreadSafeQueue<T>::Pop(T& elem)
+{
+    std::lock_guard<std::mutex> lock(mux_);
+    if(queue_.empty())
+    {
+        return false;
+    }
+    elem = queue_.front();
+    queue_.pop();
+    return true;
+}
+
+void template<typename T> ThreadSafeQueue<T>::WaitAndPop(T& elem)
+{
+    std::unique_lock<std::mutex> lock(mux_);
+    cond_.wait(lock, [this]{return !queue_.empty();});
+    elem = queue_.front();
+    queue_.pop();
+}
+
+bool template<typename T> ThreadSafeQueue<T>::Empty() const
+{
+    std::lock_guard<std::mutex> lock(mux_);
+    if(queue_.empty())
+    {
+        return true;
+    }
+    return false;
+}
+
+
 }
