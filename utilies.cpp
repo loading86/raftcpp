@@ -36,6 +36,17 @@ bool IsSnapshotEmpty(const raftpb::Snapshot& ss)
 {
     return ss.metadata().index() == 0;
 }
+
+bool IsLocalMsg(raftpb::MessageType type)
+{
+    return type == raftpb::MsgHup || type == raftpb::MsgBeat || type == raftpb::MsgUnreachable || type == raftpb::MsgSnapStatus || type == raftpb::MsgCheckQuorum;
+}
+
+bool IsResponseMsg(raftpb::MessageType type)
+{
+    return type == raftpb::MsgAppResp || type == raftpb::MsgVoteResp || type == raftpb::MsgHeartbeatResp || type == raftpb::MsgUnreachable || type == raftpb::MsgPreVoteResp;
+}
+
 std::random_device rd;
 int32_t RandomNum(int32_t scale)
 {
@@ -56,16 +67,21 @@ raftpb::MessageType VoteRespMsgType(raftpb::MessageType type)
     }
 }
 
-template<typename T> ThreadSafeQueue<T>::ThreadSafeQueue()
+template<typename T> ThreadSafeQueue<T>::ThreadSafeQueue(uint64_t cap)
 {
-
+    cap_ = cap;
 }
 
-void template<typename T> ThreadSafeQueue<T>::Push(const T& elem)
+bool template<typename T> ThreadSafeQueue<T>::Push(const T& elem)
 {
     std::lock_guard<std::mutex> lock(mux_);
+    if(queue_.size() == cap_)
+    {
+        return false;
+    }
     queue_.push(elem);
-    cond_.notify_one();
+    can_pop_cond_.notify_one();
+    return true;
 }
 
 bool template<typename T> ThreadSafeQueue<T>::Pop(T& elem)
@@ -77,15 +93,25 @@ bool template<typename T> ThreadSafeQueue<T>::Pop(T& elem)
     }
     elem = queue_.front();
     queue_.pop();
+    can_push_cond_.notify_one();
     return true;
+}
+
+void template<typename T> ThreadSafeQueue<T>::WaitAndPush(const T& elem)
+{
+    std::unique_lock<std::mutex> lock(mux_);
+    can_pop_cond_.wait(lock, [this]{return queue_.size() < cap_;});
+    queue_.push_back(elem);
+    can_pop_cond_.notify_one();
 }
 
 void template<typename T> ThreadSafeQueue<T>::WaitAndPop(T& elem)
 {
     std::unique_lock<std::mutex> lock(mux_);
-    cond_.wait(lock, [this]{return !queue_.empty();});
+    can_pop_cond_.wait(lock, [this]{return !queue_.empty();});
     elem = queue_.front();
     queue_.pop();
+    can_push_cond_.notify_one();
 }
 
 bool template<typename T> ThreadSafeQueue<T>::Empty() const
@@ -97,6 +123,17 @@ bool template<typename T> ThreadSafeQueue<T>::Empty() const
     }
     return false;
 }
+
+bool template<typename T> ThreadSafeQueue<T>::Full() const
+{
+    std::lock_guard<std::mutex> lock(mux_);
+    if(queue_.size() == cap_)
+    {
+        return true;
+    }
+    return false;
+}
+
 
 
 }

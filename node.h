@@ -68,7 +68,18 @@ namespace raft
     {
         private:
             std::atomic_int node_status_;
-            
+            ThreadSafeQueue<raftpb::Message>* prop_queue_;
+            ThreadSafeQueue<raftpb::Message>* recv_queue_;
+            ThreadSafeQueue<raftpb::ConfChange>* confchange_queue_;
+            ThreadSafeQueue<raftpb::ConfState>* confstate_queue_;
+            ThreadSafeQueue<Ready>* ready_queue_;
+            ThreadSafeQueue<int>* advance_queue_;
+            ThreadSafeQueue<int>* tick_queue_;
+            ThreadSafeQueue<int>* done_queue_;
+            ThreadSafeQueue<int>* stop_queue_;
+        public:
+            node();
+
     }
 
 

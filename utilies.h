@@ -13,21 +13,28 @@ bool IsHardStateEmpty(raftpb::HardState& state);
 int32_t RandomNum(int32_t scale);
 bool IsSnapshotEmpty(const raftpb::Snapshot& ss);
 raftpb::MessageType VoteRespMsgType(raftpb::MessageType type);
+bool IsLocalMsg(raftpb::MessageType type);
+bool IsResponseMsg(raftpb::MessageType type);
 
 template<typename T>
 class ThreadSafeQueue
 {
     private:
         std::mutex mux_;
-        std::condition_variable cond_;
+        std::condition_variable can_push_cond_;
+        std::condition_variable can_pop_cond_;
         std::queue<T> queue_;
+        uint64_t cap_;
     
     public:
-        ThreadSafeQueue();
-        void Push(const T& elem);
-        bool Empty() const;
-        bool TryPop(T& elem);
+        ThreadSafeQueue(uint64_t cap = UINT64_MAX);
+        bool Push(const T& elem);
+        bool Pop(T& elem);
+        void WaitAndPush(const T& elem);
         void WaitAndPop(T& elem);
+        bool Empty() const;
+        bool Full() const;
+        
 
 };
 }
