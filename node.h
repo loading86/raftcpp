@@ -56,7 +56,6 @@ namespace raft
         ReadyQueueNodeConf = 3,
         ReadyQueueNodeConfState = 4,
         
-
     };
 
     struct ReadyQueueNode
