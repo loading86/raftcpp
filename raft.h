@@ -80,7 +80,7 @@ private:
 
 public:
     Raft(uint64_t id, uint64_t lead, RaftLog* raft_log, uint64_t max_msg_size, int32_t max_inflight, int32_t heart_beat_timeout, int32_t elction_timeout, Logger* logger, bool check_quorum, bool pre_vote, ReadOnly* read_only);
-    Raft* NewRaft(Config* config);
+    Raft(Config* config);
     void BecomeFollower(uint64_t term, uint64_t lead);
     void LoadState(raftpb::HardState& state);
     int32_t Step(raftpb::Message& msg);
@@ -123,6 +123,7 @@ public:
     bool MaybeCommit();
     void Reset(uint64_t term);
     void AppendEntries(std::vector<raftpb::Entry>& entries);
+    void AppendEntry(raftpb::Entry& ent);
     void TickElection();
     void TickHeartbeat();
     void BecomeCandidate();

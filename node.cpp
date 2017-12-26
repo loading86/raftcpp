@@ -34,20 +34,7 @@ void node::Tick()
     tick_queue_.Push(1);
 }
 
-int32_t node::Campaign()
-{
-    raftpb::Message msg;
-    msg.set_type(raftpb::MsgHup);
-    return step(msg);
-}
 
-int32_t node::Propose(const std::string& data)
-{
-    raftpb::Message msg;
-    msg.set_type(raftpb::MsgProp);
-    msg.set_data(data);
-    return step(msg);
-}
 
 int32_t node::Step(const raftpb::Message& msg)
 {
@@ -80,6 +67,73 @@ int32_t node::step(const raftpb::Message& msg)
         recv_queue_->WaitAndPush(msg);
     }
     return 0;
+}
+
+node* node::StartNode(const Config& cfg, const std::vector<Peer>& peers )
+{
+    Raft* rf = new Raft(&cfg);
+    rf->BecomeFollower(1, 0);
+    for(auto peer: peers)
+    {
+        raftpb::ConfChange cc;
+        cc.set_type(raftpb::ConfChangeAddNode);
+        cc.set_nodeid(peer.id_);
+        cc.set_context(peer.context_);
+        std::string data;
+        cc.SerializeToString(&data);
+        raftpb::Entry ent;
+        ent.set_type(raftpb::EntryConfChange);
+        ent.set_data(data);
+        ent.set_term(1);
+        ent.set_index(raft_log_->LastIndex());
+        raft_log_->AppendEntry(ent)
+    }
+    raft_log_->SetCommited(raft_log_->LastIndex());
+    for(auto peer: peers)
+    {
+        rf->AddNode(peer.id_);
+    }
+    node* n = node();
+    n->SetLogger(rf->GetLogger());
+    std::thread* thd = new std::thread((std::mem_fn(&node::Run), std::ref(*n), rf));
+    thd->detach();
+    return n;
+}
+
+node* node::RestartNode(const Config& cfg)
+{
+    Raft* rf = new Raft(&cfg);
+    node* n = node();
+    n->SetLogger(rf->GetLogger());
+    std::thread* thd = new std::thread((std::mem_fn(&node::Run), std::ref(*n), rf));
+    thd->detach();
+    return n;
+}
+
+int32_t node::Campaign()
+{
+    raftpb::Message msg;
+    msg.set_type(raftpb::MsgHup);
+    return step(msg);
+}
+
+int32_t node::Propose(const std::string& data)
+{
+    raftpb::Message msg;
+    msg.set_type(raftpb::MsgProp);
+    raftpb::Entry* ent = msg.add_entries();
+    ent->set_data(data);
+    return step(msg);
+}
+
+void node::run(Raft* rf)
+{
+
+}
+
+Ready* node::GetReady()
+{
+    
 }
 
 }

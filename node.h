@@ -49,6 +49,12 @@ namespace raft
         Ready* GetReady();
     };
 
+    struct Peer 
+    {
+        uint64_t id_;
+        std::string context_;
+    }
+
     enum ReadyQueueNodeType
     {
         ReadyQueueNodeProposal = 1,

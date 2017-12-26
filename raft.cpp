@@ -46,7 +46,7 @@ Raft::Raft(uint64_t id, uint64_t lead, RaftLog* raft_log, uint64_t max_msg_size,
     step_ = nullptr;
 }
 
-Raft* Raft::NewRaft(Config* config)
+Raft::Raft(Config* config)
 {
     if (!config->Validate()) {
         return nullptr;
@@ -1091,6 +1091,20 @@ void Raft::Reset(uint64_t term)
 
 void Raft::AppendEntries(std::vector<raftpb::Entry>& entries)
 {
+    uint64_t last_index = raft_log_->LastIndex();
+    for (int i = 0; i < entries.size(); i++) {
+        entries[i].set_term(term_);
+        entries[i].set_index(last_index + 1 + i);
+    }
+    raft_log_->Append(entries, last_index);
+    Progress* pr = GetProgress(id_);
+    pr->MaybeUpdate(raft_log_->LastIndex());
+    MaybeCommit();
+}
+
+void Raft::AppendEntry(raftpb::Entry& ent)
+{
+    std::vector<raftpb::Entry> entries = {ent};
     uint64_t last_index = raft_log_->LastIndex();
     for (int i = 0; i < entries.size(); i++) {
         entries[i].set_term(term_);
