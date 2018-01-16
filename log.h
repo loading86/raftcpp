@@ -1,5 +1,6 @@
 #include "log_unstable.h"
-#include "logger.h"
+#include "spdlog/logger.h"
+#include "spdlog/spdlog.h"
 #include "storage.h"
 #include <inttypes.h>
 #include <string>
@@ -11,13 +12,13 @@ private:
     Unstable* unstable_ = nullptr;
     uint64_t commited_ = 0;
     uint64_t applied_ = 0;
-    Logger* logger_ = nullptr;
+    std::shared_ptr<spdlog::logger> logger_ = nullptr;
 
 private:
-    RaftLog(Storage* storage, Logger* logger);
+    RaftLog(Storage* storage, std::shared_ptr<spdlog::logger> logger);
 
 public:
-    static RaftLog* NewLog(Storage* storage, Logger* logger);
+    static RaftLog* NewLog(Storage* storage, std::shared_ptr<spdlog::logger> logger);
     int32_t FirstIndex(uint64_t& index);
     int32_t LastIndex(uint64_t& index);
     uint64_t LastIndex();

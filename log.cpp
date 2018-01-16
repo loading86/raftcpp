@@ -2,7 +2,7 @@
 #include "utilies.h"
 #include <algorithm>
 namespace raft {
-RaftLog::RaftLog(Storage* storage, Logger* logger)
+RaftLog::RaftLog(Storage* storage, std::shared_ptr<spdlog::logger> logger)
 {
     storage_ = storage;
     logger_ = logger;
@@ -11,7 +11,7 @@ RaftLog::RaftLog(Storage* storage, Logger* logger)
     applied_ = 0;
 }
 
-RaftLog* RaftLog::NewLog(Storage* storage, Logger* logger)
+RaftLog* RaftLog::NewLog(Storage* storage, std::shared_ptr<spdlog::logger> logger)
 {
     if (storage == nullptr) {
         return nullptr;
@@ -82,7 +82,7 @@ int32_t RaftLog::MaybeAppend(uint64_t index,
         lastnewi = index + entries.size();
         uint64_t ci = FindConflict(entries);
         if (ci <= commited_) {
-            logger_->Trace("conflict with committed entry");
+            SPDLOG_TRACE(logger_, "conflict with committed entry");
         } else if (ci != 0) {
             uint64_t offset = index + 1;
             std::vector<raftpb::Entry> append_entries(entries.begin() + ci - offset,
@@ -117,8 +117,8 @@ uint64_t RaftLog::FindConflict(const std::vector<raftpb::Entry>& entries)
             uint64_t last_index;
             LastIndex(last_index);
             if (entry.index() <= last_index) {
-                logger_->Trace("found conflict");
-                // todo
+                SPDLOG_TRACE(logger_, "found conflict");
+                exit();
             }
             return entry.index();
         }
@@ -148,7 +148,7 @@ int32_t RaftLog::Term(uint64_t index, uint64_t& term)
         term = 0;
         return 0;
     }
-    logger_->Trace("RaftLog Term failed");
+    SPDLOG_TRACE(logger_, "RaftLog Term failed");
     return ret;
 }
 
@@ -181,7 +181,7 @@ int32_t RaftLog::AllEntries(std::vector<raftpb::Entry>& entries)
 int32_t RaftLog::MustCheckOutOfBounds(uint64_t lo, uint64_t hi)
 {
     if (lo > hi) {
-        logger_->Trace("invalid Slice");
+        SPDLOG_TRACE(logger_, "invalid Slice");
         return 1;
     }
     uint64_t first_index;
@@ -199,7 +199,7 @@ int32_t RaftLog::MustCheckOutOfBounds(uint64_t lo, uint64_t hi)
     }
     uint64_t len = last_index - first_index + 1;
     if (lo < first_index || hi > first_index + len) {
-        logger_->Trace("Slice out of bound");
+        SPDLOG_TRACE(logger_, "Slice out of bound");
         return 1;
     }
     return 0;
@@ -223,10 +223,10 @@ int32_t RaftLog::Slice(uint64_t lo,
         if (ret == ErrCompacted) {
             return 0;
         } else if (ret == ErrUnavailable) {
-            logger_->Trace("entries are unavailable from storage");
+            SPDLOG_TRACE(logger_, "entries are unavailable from storage");
             return ret;
         } else {
-            logger_->Trace("entries are unavailable from storage");
+            SPDLOG_TRACE(logger_, "entries are unavailable from storage");
             return ret;
         }
     }
@@ -253,7 +253,7 @@ int32_t RaftLog::NextEnts(std::vector<raftpb::Entry>& entries)
     if (commited_ + 1 > off) {
         ret = Slice(off, commited_ + 1, UINT64_MAX, entries);
         if (ret != 0) {
-            logger_->Trace("unexpected error when getting unapplied entries");
+            SPDLOG_TRACE(logger_, "unexpected error when getting unapplied entries");
             return ret;
         }
     }
@@ -289,7 +289,7 @@ int32_t RaftLog::CommitTo(uint64_t commited)
             return ret;
         }
         if (last_index < commited) {
-            logger_->Trace(
+            SPDLOG_TRACE(logger_, 
                 "commited is out of range. Was the raft log corrupted, "
                 "truncated, or lost?");
             return 1;
@@ -306,7 +306,7 @@ int32_t RaftLog::AppliedTo(uint64_t applied)
         return 0;
     }
     if (commited_ < applied || applied < applied_) {
-        logger_->Trace("applied is out of range");
+        SPDLOG_TRACE(logger_, "applied is out of range");
         return 1;
     }
     applied_ = applied;

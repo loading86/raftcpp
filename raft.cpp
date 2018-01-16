@@ -29,7 +29,7 @@ bool Config::Validate()
     return true;
 }
 
-Raft::Raft(uint64_t id, uint64_t lead, RaftLog* raft_log, uint64_t max_msg_size, int32_t max_inflight, int32_t heart_beat_timeout, int32_t elction_timeout, Logger* logger, bool check_quorum, bool pre_vote, ReadOnly* read_only)
+Raft::Raft(uint64_t id, uint64_t lead, RaftLog* raft_log, uint64_t max_msg_size, int32_t max_inflight, int32_t heart_beat_timeout, int32_t elction_timeout, std::shared_ptr<spdlog::logger> logger, bool check_quorum, bool pre_vote, ReadOnly* read_only)
 {
     id_ = id;
     lead_ = lead;
@@ -296,7 +296,7 @@ void Raft::StepFollower(raftpb::Message& msg)
     switch (msg.type()) {
     case raftpb::MsgProp:
         if (lead_ == -1) {
-            logger_->Info("has not leader drop prop");
+            logger_->info("has not leader drop prop");
             return;
         }
         msg.set_to(lead_);
@@ -319,7 +319,7 @@ void Raft::StepFollower(raftpb::Message& msg)
         break;
     case raftpb::MsgTransferLeader:
         if (lead_ == -1) {
-            logger_->Info("has not leader drop MsgTransferLeader");
+            logger_->info("has not leader drop MsgTransferLeader");
             return;
         }
         msg.set_to(lead_);
@@ -329,12 +329,12 @@ void Raft::StepFollower(raftpb::Message& msg)
         if (Promotable(id_)) {
             Campaign(kCampaignTransfer);
         } else {
-            logger_->Info("received MsgTimeoutNow, but is not promotable");
+            logger_->info("received MsgTimeoutNow, but is not promotable");
         }
         break;
     case raftpb::MsgReadIndex:
         if (lead_ == -1) {
-            logger_->Info("has not leader drop MsgReadIndex");
+            logger_->info("has not leader drop MsgReadIndex");
             return;
         }
         msg.set_to(lead_);
@@ -342,7 +342,7 @@ void Raft::StepFollower(raftpb::Message& msg)
         break;
     case raftpb::MsgReadIndexResp:
         if (msg.entries_size() != 1) {
-            logger_->Info("invalid format of MsgReadIndexResp, entries count not 1");
+            logger_->info("invalid format of MsgReadIndexResp, entries count not 1");
             return;
         }
         ReadState state(msg.index(), msg.entries(0).data());
@@ -376,7 +376,7 @@ void Raft::StepCandidate(raftpb::Message& msg)
 {
     switch (msg.type()) {
     case raftpb::MsgProp:
-        logger_->Info("has not leader drop prop");
+        logger_->info("has not leader drop prop");
         break;
     case raftpb::MsgApp:
         BecomeFollower(msg.term(), msg.from());
@@ -408,7 +408,7 @@ void Raft::StepCandidate(raftpb::Message& msg)
         }
         break;
     case raftpb::MsgTimeoutNow:
-        logger_->Info("ignore MsgTimeoutNow");
+        logger_->info("ignore MsgTimeoutNow");
         break;
     default:
         break;
@@ -497,7 +497,7 @@ void Raft::StepLeader(raftpb::Message& msg)
 
     Progress* pr = GetProgress(msg.from());
     if (!pr) {
-        logger_->Info("no progress available");
+        logger_->info("no progress available");
         return;
     }
     switch (msg.type()) {
@@ -668,7 +668,7 @@ void Raft::SetProgress(uint64_t id, uint64_t match, uint64_t next, bool is_learn
     auto it = peers_.find(id);
     if (it != peers_.end()) {
         //todo
-        logger_->Trace("can not change role from voter to learner");
+        SPDLOG_TRACE(logger_, "can not change role from voter to learner");
         return;
     }
     Progress* p = new Progress(next, match, Inflights::NewInflights(max_inflight_), true);

@@ -1,7 +1,8 @@
 #ifndef __RAFT__H__
 #define __RAFT__H__
 #include "log.h"
-#include "logger.h"
+#include "spdlog/logger.h"
+#include "spdlog/spdlog.h"
 #include "progress.h"
 #include "read_only.h"
 #include "storage.h"
@@ -42,7 +43,7 @@ struct Config {
     bool check_quorum_ = false;
     bool pre_vote_ = false;
     ReadOnlyOption read_only_option_ = ReadOnlySafe;
-    Logger* logger_ = nullptr;
+    std::shared_ptr<spdlog::logger> logger_ = nullptr;
     bool disable_proposal_forwarding_ = false;
 
     bool Validate();
@@ -76,10 +77,10 @@ private:
     int32_t randomized_elction_timeout_ = 0;
     std::function<void()> tick_ = nullptr;
     std::function<void(raftpb::Message& msg)> step_ = nullptr;
-    Logger* logger_ = nullptr;
+    std::shared_ptr<spdlog::logger> logger_ = nullptr;
 
 public:
-    Raft(uint64_t id, uint64_t lead, RaftLog* raft_log, uint64_t max_msg_size, int32_t max_inflight, int32_t heart_beat_timeout, int32_t elction_timeout, Logger* logger, bool check_quorum, bool pre_vote, ReadOnly* read_only);
+    Raft(uint64_t id, uint64_t lead, RaftLog* raft_log, uint64_t max_msg_size, int32_t max_inflight, int32_t heart_beat_timeout, int32_t elction_timeout, std::shared_ptr<spdlog::logger> logger, bool check_quorum, bool pre_vote, ReadOnly* read_only);
     Raft(Config* config);
     void BecomeFollower(uint64_t term, uint64_t lead);
     void LoadState(raftpb::HardState& state);
